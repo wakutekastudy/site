@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>わくてかスタディ研究所 | 遊びながら学ぶ、を仕組みにする。</title>
+<meta name="description" content="わくてかスタディ研究所は、遊びながら学べる学習ゲームを自分でつくり、置いておける場所です。アカウントも交流も強制しません。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2314213D'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='%23FFC145' font-family='serif' font-weight='700'%3E9%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --ink: #14213D;
+    --ink-soft: #4A5578;
+    --paper: #FCFAF7;
+    --paper-warm: #F3ECDC;
+    --spark: #FFC145;
+    --coral: #FF6B57;
+    --font-display: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    color: var(--ink);
+    background: var(--paper);
+    line-height: 1.8;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3 { font-family: var(--font-display); margin: 0; }
+
+  a { color: inherit; }
+
+  .skip-link {
+    position: absolute;
+    left: -999px;
+    top: 0;
+    background: var(--spark);
+    color: var(--ink);
+    padding: 0.6em 1em;
+    z-index: 100;
+    font-weight: 700;
+  }
+  .skip-link:focus {
+    left: 1em;
+    top: 1em;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--coral);
+    outline-offset: 3px;
+  }
+
+  .wrap {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+
+  /* ---------- header ---------- */
+  header.site-header {
+    padding: 1.5rem 0;
+  }
+  .site-header .wrap {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .mark {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.1rem;
+    letter-spacing: 0.02em;
+  }
+  .mark span { color: var(--coral); }
+  nav.site-nav a {
+    text-decoration: none;
+    font-size: 0.95rem;
+    color: var(--ink-soft);
+    margin-left: 1.5rem;
+  }
+  nav.site-nav a:hover { color: var(--ink); }
+
+  /* ---------- hero ---------- */
+  .hero {
+    background: var(--ink);
+    color: var(--paper);
+    position: relative;
+    overflow: hidden;
+    padding: 4.5rem 0 5rem;
+  }
+  .hero .wrap {
+    position: relative;
+    z-index: 2;
+  }
+  .hero-badge {
+    display: inline-block;
+    font-size: 0.85rem;
+    color: var(--spark);
+    border: 1px solid rgba(255, 193, 69, 0.4);
+    border-radius: 999px;
+    padding: 0.35em 1em;
+    margin-bottom: 1.75rem;
+  }
+  .hero h1 {
+    font-size: clamp(2.4rem, 6vw, 3.6rem);
+    line-height: 1.3;
+    letter-spacing: 0.01em;
+  }
+  .hero .en {
+    display: block;
+    font-family: var(--font-body);
+    font-size: clamp(0.95rem, 2vw, 1.1rem);
+    letter-spacing: 0.14em;
+    color: rgba(252, 250, 247, 0.6);
+    margin-top: 0.9rem;
+    font-weight: 500;
+  }
+  .hero p.lead {
+    font-size: clamp(1.05rem, 2.2vw, 1.25rem);
+    max-width: 32em;
+    margin: 1.75rem 0 2.5rem;
+    color: rgba(252, 250, 247, 0.88);
+  }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6em;
+    background: var(--spark);
+    color: var(--ink);
+    text-decoration: none;
+    font-weight: 700;
+    padding: 0.9em 1.6em;
+    border-radius: 8px;
+    font-size: 1.02rem;
+  }
+  .cta:hover { background: #ffd873; }
+
+  /* decorative 九九 grid */
+  .kuku-grid {
+    position: absolute;
+    right: -6%;
+    top: 50%;
+    transform: translateY(-50%);
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 6px;
+    width: min(46vw, 480px);
+    z-index: 1;
+    opacity: 0.9;
+  }
+  .kuku-grid span {
+    font-family: var(--font-display);
+    font-size: clamp(0.55rem, 1.1vw, 0.85rem);
+    color: rgba(252, 250, 247, 0.18);
+    text-align: center;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: spark-in 900ms ease-out both;
+    animation-delay: var(--d, 0ms);
+  }
+  @keyframes spark-in {
+    0%   { color: rgba(252, 250, 247, 0.18); }
+    45%  { color: var(--spark); }
+    100% { color: rgba(252, 250, 247, 0.18); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .kuku-grid span { animation: none; color: rgba(252, 250, 247, 0.18); }
+  }
+  @media (max-width: 720px) {
+    .kuku-grid { display: none; }
+  }
+
+  /* ---------- sections ---------- */
+  section { padding: 4.5rem 0; }
+  section.alt { background: var(--paper-warm); }
+
+  .section-head { max-width: 34em; margin-bottom: 2.5rem; }
+  .section-head h2 {
+    font-size: clamp(1.5rem, 3vw, 1.9rem);
+  }
+  .section-head p {
+    color: var(--ink-soft);
+    margin-top: 0.75rem;
+  }
+
+  /* concept: three quiet panels, no card-kit look */
+  .concept-list {
+    display: grid;
+    gap: 0;
+    border-top: 1px solid rgba(20, 33, 61, 0.15);
+  }
+  .concept-item {
+    display: grid;
+    grid-template-columns: 9em 1fr;
+    gap: 1.5rem;
+    padding: 1.75rem 0;
+    border-bottom: 1px solid rgba(20, 33, 61, 0.15);
+  }
+  .concept-item h3 {
+    font-size: 1.15rem;
+    color: var(--ink);
+  }
+  .concept-item p { margin: 0; color: var(--ink-soft); }
+  @media (max-width: 600px) {
+    .concept-item { grid-template-columns: 1fr; gap: 0.4rem; }
+  }
+
+  /* how it works: genuine sequence, numbered */
+  .steps {
+    counter-reset: step;
+    display: grid;
+    gap: 1.75rem;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: 2.6rem 1fr;
+    gap: 1.25rem;
+    align-items: start;
+  }
+  .step .num {
+    counter-increment: step;
+    font-family: var(--font-display);
+    font-size: 1.4rem;
+    color: var(--coral);
+  }
+  .step .num::before { content: counter(step); }
+  .step h3 { font-size: 1.05rem; margin-bottom: 0.35rem; }
+  .step p { margin: 0; color: var(--ink-soft); }
+
+  /* roadmap */
+  .roadmap { border-left: 2px solid rgba(20, 33, 61, 0.15); padding-left: 1.75rem; display: grid; gap: 1.75rem; }
+  .roadmap-item { position: relative; }
+  .roadmap-item::before {
+    content: "";
+    position: absolute;
+    left: -2.28rem;
+    top: 0.35rem;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--coral);
+  }
+  .roadmap-item.done::before { background: var(--spark); }
+  .roadmap-item .when {
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    margin-bottom: 0.2rem;
+  }
+  .roadmap-item h3 { font-size: 1.05rem; }
+  .roadmap-item p { margin: 0.3rem 0 0; color: var(--ink-soft); }
+
+  /* footer */
+  footer {
+    background: var(--ink);
+    color: rgba(252, 250, 247, 0.7);
+    padding: 3rem 0;
+    font-size: 0.9rem;
+  }
+  footer .wrap {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+  }
+  footer .mark { color: rgba(252, 250, 247, 0.9); }
+  footer .social { display: flex; gap: 1.25rem; list-style: none; padding: 0; margin: 0; }
+  footer .soon { color: rgba(252, 250, 247, 0.4); }
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">本文へ移動</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <div class="mark">わくてか<span>スタディ</span>研究所</div>
+    <nav class="site-nav" aria-label="サイト内">
+      <a href="#concept">コンセプト</a>
+      <a href="#how">つくりかた</a>
+      <a href="#roadmap">これから</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="hero">
+    <div class="kuku-grid" aria-hidden="true" role="presentation" id="kukuGrid"></div>
+    <div class="wrap">
+      <span class="hero-badge">9月9日、「九九」の日にはじめました</span>
+      <h1>わくてかスタディ研究所<span class="en">WAKUTEKA STUDY LAB</span></h1>
+      <p class="lead">遊びながら学ぶ、を仕組みにする。<br>
+      覚えたいことを自分でゲームにして、遊びながら身につける場所です。</p>
+      <a class="cta" href="#concept">なにをする場所か見る</a>
+    </div>
+  </section>
+
+  <section id="concept">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>ここでできること</h2>
+        <p>勉強を我慢する時間ではなく、遊びの時間に変えるための、小さな仕組みです。</p>
+      </div>
+      <div class="concept-list">
+        <div class="concept-item">
+          <h3>遊びながら学ぶ</h3>
+          <p>暗記のための我慢ではなく、クイズやゲームとして繰り返せる形にします。</p>
+        </div>
+        <div class="concept-item">
+          <h3>自分で作れる</h3>
+          <p>覚えたい内容を書き出すだけで、自分専用の学習ゲームになります。難しい設定はいりません。</p>
+        </div>
+        <div class="concept-item">
+          <h3>ゆるくつながる</h3>
+          <p>アカウント登録も交流も必須にしません。作ったものを、置いておきたい人が置いておける場所です。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="alt">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>つくりかた</h2>
+        <p>むずかしい準備はありません。3つの手順だけです。</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <div class="num"></div>
+          <div>
+            <h3>覚えたいことを書き出す</h3>
+            <p>問題と答えを、テキストとして書き出します。専用のファイルにするだけで準備は完了です。</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num"></div>
+          <div>
+            <h3>ブラウザで遊ぶ</h3>
+            <p>クイズ形式で出題され、間違えた問題だけを繰り返し練習できます。</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num"></div>
+          <div>
+            <h3>気が向いたら公開する</h3>
+            <p>自分だけで使ってもいいですし、GitHub経由で置いておけば、誰かが遊ぶかもしれません。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="roadmap">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>これから</h2>
+        <p>まだ始まったばかりです。正直な進み具合を、ここに置いておきます。</p>
+      </div>
+      <div class="roadmap">
+        <div class="roadmap-item done">
+          <div class="when">2026年9月9日</div>
+          <h3>このトップページを公開</h3>
+          <p>「九九の日」にあわせて、まずは看板だけ立てました。</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="when">近日</div>
+          <h3>あそべるクイズを公開</h3>
+          <p>/games/ に、遊びながら学べる最初のクイズを置きます。</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="when">その先</div>
+          <h3>だれでも問題集を置けるように</h3>
+          <p>自分の作った問題集を、この場所に並べられるようにしていきます。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <div class="mark">わくてかスタディ研究所</div>
+      <p style="margin:0.5rem 0 0; max-width:28em;">遊びながら学ぶ、を仕組みにする。</p>
+    </div>
+    <ul class="social" aria-label="関連リンク">
+      <li class="soon">GitHub(準備中)</li>
+      <li class="soon">X(準備中)</li>
+      <li class="soon">Discord(準備中)</li>
+    </ul>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var grid = document.getElementById('kukuGrid');
+  if (!grid) return;
+  var frag = document.createDocumentFragment();
+  for (var row = 1; row <= 9; row++) {
+    for (var col = 1; col <= 9; col++) {
+      var cell = document.createElement('span');
+      cell.textContent = row * col;
+      cell.style.setProperty('--d', ((row * 9 + col) * 26) + 'ms');
+      frag.appendChild(cell);
+    }
+  }
+  grid.appendChild(frag);
+})();
+</script>
+
+</body>
+</html>
