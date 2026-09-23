@@ -43,7 +43,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>五目並べ — わくてかスタディ研究所 ひな型</title>
+<title>五目並べ | 古典ゲーム | わくてかスタディ研究所</title>
 <style>
   :root {
     --ink: #14213D;
@@ -168,10 +168,15 @@
   .notice { color: var(--accent-text); font-size: 0.9rem; margin: 0.25rem 0; min-height: 1.2rem; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   kbd { font-family: inherit; border: 1px solid var(--fg-soft); border-radius: 0.25rem; padding: 0 0.3rem; font-size: 0.85em; }
+  /* サイト内の戻り導線(公開プラットフォーム側で追加) */
+  .site-back { font-size: 0.85rem; padding: 0.5rem 0.75rem 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
 </style>
 </head>
 <body>
 <div class="app">
+<nav class="site-back" style="padding:0 0 0.5rem" aria-label="サイト内"><a href="./">← 古典ゲーム一覧</a> ／ <a href="../">トップ</a></nav>
   <header>
     <h1 id="title"></h1>
     <span class="sub" id="subtitle"></span>
@@ -709,7 +714,7 @@ const ui = (() => {
   }
 
   function fillTexts() {
-    document.title = T.title + ' — わくてかスタディ研究所 ひな型';
+    document.title = T.title + ' | 古典ゲーム | わくてかスタディ研究所';
     $('title').textContent = T.title;
     $('subtitle').textContent = T.subtitle;
     $('btn-new').textContent = T.newGame;

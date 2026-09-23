@@ -45,7 +45,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>リバーシ - わくてかスタディ研究所 ひな型</title>
+<title>リバーシ | 古典ゲーム | わくてかスタディ研究所</title>
 <style>
   :root {
     --ink: #14213D;
@@ -178,9 +178,14 @@
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
   }
+  /* サイト内の戻り導線(公開プラットフォーム側で追加) */
+  .site-back { font-size: 0.85rem; padding: 0.5rem 0.75rem 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
 </style>
 </head>
 <body>
+<nav class="site-back" style="max-width:32rem;margin:0 auto" aria-label="サイト内"><a href="./">← 古典ゲーム一覧</a> ／ <a href="../">トップ</a></nav>
 <header>
   <h1 id="title"></h1>
   <span id="seedView" class="seed-view"></span>
@@ -568,7 +573,7 @@ const ui = {
       seedLabel: q("seedLabel"), seedInput: q("seedInput"), btnSeedStart: q("btnSeedStart"), footNote: q("footNote")
     };
     ui.el.title.textContent = TEXT.title;
-    document.title = TEXT.title;
+    document.title = TEXT.title + ' | 古典ゲーム | わくてかスタディ研究所';
     ui.el.footNote.textContent = TEXT.footNote(CONFIG.version, CONFIG.license);
     ui.buildBoard();
     ui.buildRules();

@@ -47,7 +47,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>7並べ — わくてかスタディ研究所 ひな型</title>
+<title>7並べ | 古典ゲーム | わくてかスタディ研究所</title>
 <style>
   :root {
     --ink: #14213D;
@@ -217,9 +217,14 @@
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
   }
+  /* サイト内の戻り導線(公開プラットフォーム側で追加) */
+  .site-back { font-size: 0.85rem; padding: 0.5rem 0.75rem 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
 </style>
 </head>
 <body>
+<nav class="site-back" aria-label="サイト内"><a href="./">← 古典ゲーム一覧</a> ／ <a href="../">トップ</a></nav>
 <header>
   <div>
     <h1 id="title"></h1>
@@ -728,7 +733,7 @@ const TEXT = {
 
   function setStaticText() {
     el.title.textContent = TEXT.title;
-    document.title = TEXT.title;
+    document.title = TEXT.title + ' | 古典ゲーム | わくてかスタディ研究所';
     el.seedLabel.textContent = TEXT.seedLabel;
     el.btnRules.textContent = TEXT.rules;
     el.btnNew.textContent = TEXT.newGame;

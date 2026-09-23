@@ -144,6 +144,46 @@
     font-size: 1.02rem;
   }
   .cta:hover { background: #ffd873; }
+  .cta-sub {
+    display: inline-block;
+    margin-left: 1.25rem;
+    color: rgba(252, 250, 247, 0.85);
+    font-size: 0.98rem;
+  }
+  @media (max-width: 480px) {
+    .cta-sub { display: block; margin: 1rem 0 0; }
+  }
+
+  /* classic games */
+  .game-links {
+    list-style: none;
+    margin: 0 0 2rem;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.75rem;
+  }
+  .game-links a {
+    display: block;
+    text-decoration: none;
+    background: #fff;
+    border: 1px solid rgba(20, 33, 61, 0.15);
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+  .game-links a:hover { border-color: var(--ink); }
+  .game-links small {
+    display: block;
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+  }
+  .more-link { font-weight: 700; }
+  .more-link::after { content: " →"; color: var(--coral); }
 
   /* decorative 九九 grid */
   .kuku-grid {
@@ -287,6 +327,7 @@
   <div class="wrap">
     <div class="mark">わくてか<span>スタディ</span>研究所</div>
     <nav class="site-nav" aria-label="サイト内">
+      <a href="#classic">古典ゲーム</a>
       <a href="#concept">コンセプト</a>
       <a href="#how">つくりかた</a>
       <a href="#roadmap">これから</a>
@@ -303,7 +344,24 @@
       <h1>わくてかスタディ研究所<span class="en">WAKUTEKA STUDY LAB</span></h1>
       <p class="lead">遊びながら学ぶ、を仕組みにする。<br>
       覚えたいことを自分でゲームにして、遊びながら身につける場所です。</p>
-      <a class="cta" href="#concept">なにをする場所か見る</a>
+      <a class="cta" href="classic-games/">古典ゲームで遊ぶ</a>
+      <a class="cta-sub" href="#concept">なにをする場所か見る</a>
+    </div>
+  </section>
+
+  <section id="classic" class="alt">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>古典ゲームで遊ぶ</h2>
+        <p>昔から遊ばれてきた定番のゲームを、ブラウザでそのまま遊べます。登録は不要です。学習ゲームをつくるときの「ひな型」にもなります。</p>
+      </div>
+      <ul class="game-links">
+        <li><a href="classic-games/babanuki.html">ババ抜き<small>トランプ・4人</small></a></li>
+        <li><a href="classic-games/sevens.html">7並べ<small>トランプ・4人</small></a></li>
+        <li><a href="classic-games/gomoku.html">五目並べ<small>盤ゲーム・1対1</small></a></li>
+        <li><a href="classic-games/reversi.html">リバーシ<small>盤ゲーム・1対1</small></a></li>
+      </ul>
+      <a class="more-link" href="classic-games/">古典ゲームの一覧を見る</a>
     </div>
   </section>
 
@@ -374,10 +432,15 @@
           <h3>このトップページを公開</h3>
           <p>「九九の日」にあわせて、まずは看板だけ立てました。</p>
         </div>
+        <div class="roadmap-item done">
+          <div class="when">2026年9月</div>
+          <h3>古典ゲームを公開</h3>
+          <p>ババ抜き・7並べ・五目並べ・リバーシの4本を、<a href="classic-games/">古典ゲーム</a>に置きました。</p>
+        </div>
         <div class="roadmap-item">
           <div class="when">近日</div>
           <h3>あそべるクイズを公開</h3>
-          <p>/games/ に、遊びながら学べる最初のクイズを置きます。</p>
+          <p>遊びながら学べる最初のクイズを置きます。</p>
         </div>
         <div class="roadmap-item">
           <div class="when">その先</div>

@@ -46,7 +46,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
-<title>ババ抜き</title>
+<title>ババ抜き | 古典ゲーム | わくてかスタディ研究所</title>
 <style>
   /* handoff-brief.md 第5章のデザイントークン */
   :root {
@@ -135,9 +135,14 @@
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .log { font-size: .85rem; color: var(--muted); max-height: 7em; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
   .log p { margin: 0; }
+  /* サイト内の戻り導線(公開プラットフォーム側で追加) */
+  .site-back { font-size: 0.85rem; padding: 0.5rem 0.75rem 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
 </style>
 </head>
 <body>
+<nav class="site-back" style="padding:0.25rem 0 0" aria-label="サイト内"><a href="./">← 古典ゲーム一覧</a> ／ <a href="../">トップ</a></nav>
 <header>
   <h1>ババ抜き</h1>
   <button id="btnRules" class="secondary" type="button">ルール / シード (R)</button>
