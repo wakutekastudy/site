@@ -1,0 +1,37 @@
+Scope of License
+
+The paths below are relative to the root of this repository.
+
+The MIT No Attribution License set out below applies only to the
+following files:
+
+  1. All files in the "learning-games/" directory and its
+     subdirectories, excluding all files in the
+     "learning-games/packs/" directory and its subdirectories.
+
+  2. All files in the "classic-games/" directory and its
+     subdirectories.
+
+All other files in this repository, including but not limited to the
+top page ("index.html") and the quiz pack data in the
+"learning-games/packs/" directory, are not covered by the license
+below.
+
+------------------------------------------------------------------------
+
+MIT No Attribution
+
+Copyright 2026 wakutekastudy
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify,
+merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
