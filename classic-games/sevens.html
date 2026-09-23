@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<!--
+  ============================================================
+  ひな型ヘッダ(template-guideline.md 第8章)
+  ============================================================
+  ゲーム名        : 7並べ / sevens
+  版              : 0.1
+  最終更新日      : 2026-09-23(SD-004/007/008の反映)
+  ライセンス      : MIT-0(shared-decisions.md SD-007で決定)
+  配置パス        : classic-games/sevens.html(shared-decisions.md SD-004)
+
+  3軸チェック結果(shared-decisions.md SD-001)
+    ① メカニクス : トランプの伝統的ゲーム。特定企業の主張なし → 問題なし
+    ② 名称       : 「7並べ」「トランプ」は一般名称 → 問題なし
+    ③ 表現       : 絵柄は既存商品を模倣せず、Unicode記号(♠♥♦♣)と文字のみで独自に描画 → 問題なし
+
+  採用ルール(運営者確認済み)
+    - 4人(人間1、CPU3)。ジョーカーなし、52枚
+    - 各スートの7を場に置き、残り48枚を12枚ずつ配る
+    - 先手は配札前に♦7を持っていた人。以後時計回り
+    - 出せる札は場の列に隣接する数字のみ(6→5→…→A、8→9→…→K)
+    - トンネル(AとKの接続)なし
+    - パスは出せる札があっても可。1人3回まで。4回目のパスで失格
+    - 失格時はその人の手札を場の正しい位置にすべて置く
+    - 順位は手札を出し切った順。失格者は失格した順に下位(先に失格した人が最下位)
+    - CPUの強さは1段階。出せる札がある限りパスしない。
+      複数出せる場合は「その方向の先に自分の札が多い列」を優先(同点はシード付き乱数)
+
+  流用できる部品
+    - rng      : シード付き疑似乱数(mulberry32系)とFisher-Yatesシャッフル
+    - rules    : 隣接判定(canPlay)、状態遷移(apply)、パス上限と失格処理、順位計算
+    - ai       : 「合法手 → 評価 → 同点はシード乱数」という選択の骨格
+    - storage  : 接頭辞付きlocalStorage保存と読み込み時の検証(validateState)
+    - ui       : 手札のキーボード操作(←→/Enter/P)、aria-liveでの通知
+
+  転用メモ(第7章)
+    1. 仕組みの核 : 7を起点に、場の列に隣接する数だけを順に出せる
+    2. 転用アイディア:
+       - 数字を「年代」、スートを「分野」に置き換え、歴史の出来事を年代順に並べる
+       - 数字を「工程順」、スートを「料理・実験」に置き換え、手順を正しい順に並べる
+       - 数字を「音階」、スートを「調」に置き換え、音の並びを完成させる
+    3. 差し替えるべき箇所 : content.suits / content.ranks と、rules.canPlay(隣接判定)
+  ============================================================
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>7並べ — わくてかスタディ研究所 ひな型</title>
+<style>
+  :root {
+    --ink: #14213D;
+    --ink-soft: #4A5578;
+    --paper: #FCFAF7;
+    --paper-warm: #F3ECDC;
+    --spark: #FFC145;
+    --coral: #FF6B57;
+    /* --coral は --paper 上で 2.69:1 と 4.5:1 未満のため、赤スートの文字用に濃い色を別トークンとして定義 */
+    --coral-ink: #B8321F;
+    --bg: var(--paper);
+    --bg-alt: var(--paper-warm);
+    --fg: var(--ink);
+    --fg-soft: var(--ink-soft);
+    --red: var(--coral-ink);
+    --black: var(--ink);
+    --card-bg: #FFFFFF;
+    --card-border: #C9C2B4;
+    --focus: #1A56DB;
+    --font-body: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+    --font-head: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: var(--ink);
+      --bg-alt: #1E2C4F;
+      --fg: var(--paper);
+      --fg-soft: #C9CFE0;
+      /* --coral は --ink 上で 5.70:1 あるので、ダークでは原色をそのまま使う */
+      --red: var(--coral);
+      --black: var(--paper);
+      --card-bg: #1B2745;
+      --card-border: #4A5578;
+      --focus: var(--spark);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.5;
+    min-width: 0;
+  }
+  h1, h2 { font-family: var(--font-head); font-weight: 600; margin: 0; }
+  h1 { font-size: 1.25rem; }
+  h2 { font-size: 1rem; }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 0.375rem;
+    border: 1px solid var(--fg-soft);
+    background: var(--bg-alt);
+    color: var(--fg);
+    padding: 0.5rem 0.75rem;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+  button:focus-visible, input:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .btn-primary { background: var(--spark); color: var(--ink); border-color: transparent; font-weight: 600; }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-alt);
+  }
+  header .seed { font-size: 0.8rem; color: var(--fg-soft); }
+  header .actions { display: flex; gap: 0.5rem; }
+  main { padding: 0.5rem 0.75rem 1.5rem; max-width: 60rem; margin: 0 auto; }
+  .notice {
+    padding: 0.5rem 0.75rem;
+    margin: 0.5rem 0;
+    border-left: 4px solid var(--coral);
+    background: var(--bg-alt);
+    font-size: 0.9rem;
+  }
+  .message { min-height: 3rem; padding: 0.5rem 0; font-size: 0.95rem; }
+  .board { display: grid; gap: 0.25rem; margin: 0.5rem 0; }
+  .suit-row {
+    display: grid;
+    grid-template-columns: 1.5rem repeat(13, minmax(0, 1fr));
+    gap: 2px;
+    align-items: center;
+  }
+  .suit-row .label { font-size: 1rem; text-align: center; }
+  .slot {
+    min-width: 0;
+    height: 2.25rem;
+    border: 1px dashed var(--card-border);
+    border-radius: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: var(--fg-soft);
+    overflow: hidden;
+  }
+  .slot.placed { background: var(--card-bg); border-style: solid; font-weight: 600; }
+  .slot.just { outline: 2px solid var(--spark); }
+  .red { color: var(--red); }
+  .black { color: var(--black); }
+  .players { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin: 0.5rem 0; }
+  .player {
+    padding: 0.5rem;
+    border: 1px solid var(--card-border);
+    border-radius: 0.375rem;
+    font-size: 0.85rem;
+    min-width: 0;
+  }
+  .player.turn { border-color: var(--spark); border-width: 2px; }
+  .player .name { font-weight: 600; }
+  .hand-area { margin-top: 0.75rem; }
+  .hand-area .head { display: flex; justify-content: space-between; align-items: baseline; }
+  .hand { display: flex; flex-wrap: wrap; gap: 0.375rem; padding: 0.5rem 0; }
+  .card {
+    width: 3rem;
+    height: 4rem;
+    padding: 0;
+    border: 1px solid var(--card-border);
+    border-radius: 0.375rem;
+    background: var(--card-bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.1;
+  }
+  .card .mark { font-size: 1.1rem; }
+  .card.playable { border-color: var(--spark); border-width: 2px; }
+  .card.selected { transform: translateY(-0.375rem); box-shadow: 0 0.25rem 0 var(--spark); }
+  .card:disabled { opacity: 0.55; }
+  .controls { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+  .hint { font-size: 0.8rem; color: var(--fg-soft); }
+  .panel {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: var(--bg-alt);
+    border-radius: 0.5rem;
+  }
+  .panel ul, .panel ol { padding-left: 1.25rem; margin: 0.5rem 0; }
+  .panel li { margin: 0.25rem 0; }
+  .seed-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+  .seed-form input {
+    font: inherit;
+    padding: 0.5rem;
+    min-height: 2.75rem;
+    width: 9rem;
+    border: 1px solid var(--fg-soft);
+    border-radius: 0.375rem;
+    background: var(--card-bg);
+    color: var(--fg);
+  }
+  .result ol { font-size: 1.05rem; }
+  [hidden] { display: none !important; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 id="title"></h1>
+    <div class="seed"><span id="seed-label"></span> <span id="seed-value"></span></div>
+  </div>
+  <div class="actions">
+    <button type="button" id="btn-rules"></button>
+    <button type="button" id="btn-new"></button>
+  </div>
+</header>
+<main>
+  <div id="notice" class="notice" hidden></div>
+  <div id="message" class="message" role="status" aria-live="polite"></div>
+
+  <section id="game">
+    <h2 id="board-title" class="sr-only"></h2>
+    <div id="board" class="board" aria-labelledby="board-title"></div>
+    <div id="players" class="players"></div>
+
+    <section class="hand-area" aria-labelledby="hand-title">
+      <div class="head">
+        <h2 id="hand-title"></h2>
+        <span id="hand-status" class="hint"></span>
+      </div>
+      <div id="hand" class="hand" role="listbox" aria-labelledby="hand-title"></div>
+      <div class="controls">
+        <button type="button" id="btn-play" class="btn-primary"></button>
+        <button type="button" id="btn-pass"></button>
+      </div>
+      <p id="key-hint" class="hint"></p>
+    </section>
+
+    <section id="result" class="panel result" hidden aria-labelledby="result-title">
+      <h2 id="result-title"></h2>
+      <ol id="result-list"></ol>
+      <button type="button" id="btn-new-2" class="btn-primary"></button>
+    </section>
+  </section>
+
+  <section id="rules" class="panel" hidden aria-labelledby="rules-title">
+    <h2 id="rules-title"></h2>
+    <ul id="rules-list"></ul>
+    <h2 id="seed-title"></h2>
+    <p id="seed-desc" class="hint"></p>
+    <div class="seed-form">
+      <label for="seed-input" id="seed-input-label"></label>
+      <input type="text" id="seed-input" inputmode="numeric" autocomplete="off">
+      <button type="button" id="btn-seed-start"></button>
+    </div>
+    <div class="controls">
+      <button type="button" id="btn-rules-close"></button>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// ===== config =====
+// 仮の値(未確定事項)はここに集約する。独断で確定しないため、変更時はここだけ直す。
+const CONFIG = {
+  STORAGE_PREFIX: "wktks.",      // shared-decisions.md SD-008
+  STORAGE_KEY: "game.sevens",
+  CPU_DELAY_MS: 700,            // CPUの行動が目で追える程度の間
+  PLAYER_COUNT: 4,
+  HUMAN: 0,
+  MAX_PASS: 3,                  // 4回目のパスで失格
+  MAX_HISTORY: 400,             // 異常データでのフリーズ防止(1ゲームは最大でも 48手+失格分程度)
+  SCHEMA_VERSION: 1,
+  START_SUIT: 2                 // ♦(content.suits の index)の7を持っていた人が先手
+};
+
+// ===== rng =====
+// Math.random は種を指定できないため、シード付きの小さな疑似乱数(mulberry32)を自前で持つ。
+// 状態は数値1つで表し、純粋関数として「次の値と次の状態」を返す。
+const rng = (() => {
+  function next(state) {
+    let t = (state + 0x6D2B79F5) | 0;
+    let z = t;
+    z = Math.imul(z ^ (z >>> 15), z | 1);
+    z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+    const value = ((z ^ (z >>> 14)) >>> 0) / 4294967296;
+    return { value, state: t };
+  }
+  // 2つの整数から1つのシードを作る(手番番号ごとに独立した乱数列を得るため)
+  function mix(a, b) {
+    let h = (a ^ 0x9E3779B9) | 0;
+    h = Math.imul(h ^ (b | 0), 0x85EBCA6B);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xC2B2AE35);
+    return (h ^ (h >>> 16)) | 0;
+  }
+  // Fisher–Yates。元の配列は書き換えず、シャッフル後の配列を返す
+  function shuffle(array, seed) {
+    const out = array.slice();
+    let state = seed | 0;
+    for (let i = out.length - 1; i > 0; i--) {
+      const r = next(state);
+      state = r.state;
+      const j = Math.floor(r.value * (i + 1));
+      const tmp = out[i];
+      out[i] = out[j];
+      out[j] = tmp;
+    }
+    return out;
+  }
+  // 0以上n未満の整数を1つ選ぶ(同点の選択などに使う)
+  function pick(seed, n) {
+    return Math.floor(next(seed | 0).value * n);
+  }
+  return { next, mix, shuffle, pick };
+})();
+
+// ===== content =====
+// 表示名など差し替え可能なデータ。rules はこの中身を見ず、スート番号と数字だけを扱う。
+// 将来は JSON として外から差し込める形にしておく(ひな型では読み込み機能は作らない)。
+const content = {
+  suits: [
+    { key: "S", symbol: "♠", name: "スペード", color: "black" },
+    { key: "H", symbol: "♥", name: "ハート", color: "red" },
+    { key: "D", symbol: "♦", name: "ダイヤ", color: "red" },
+    { key: "C", symbol: "♣", name: "クラブ", color: "black" }
+  ],
+  ranks: ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"],
+  players: ["あなた", "CPU1", "CPU2", "CPU3"]
+};
+
+// ===== rules =====
+// カードは 0..51 の整数で表す。suit = floor(id / 13)、rank = id % 13 + 1(A=1, K=13)。
+// 状態は JSON にそのまま変換できる素のデータだけで構成し、apply は新しい状態を返す。
+const rules = (() => {
+  const SUITS = 4;
+  const RANKS = 13;
+  const CENTER = 7;
+
+  function cardOf(suit, rank) { return suit * RANKS + (rank - 1); }
+  function suitOf(card) { return Math.floor(card / RANKS); }
+  function rankOf(card) { return (card % RANKS) + 1; }
+
+  function clone(state) { return JSON.parse(JSON.stringify(state)); }
+
+  function newGame(seed) {
+    seed = seed | 0;
+    const deck = [];
+    for (let c = 0; c < SUITS * RANKS; c++) deck.push(c);
+    // 先手を「配札前に♦7を持っていた人」にするため、7を含めた52枚をまず配ってから7を場に移す
+    const shuffled = rng.shuffle(deck, seed);
+    const players = [];
+    for (let p = 0; p < CONFIG.PLAYER_COUNT; p++) {
+      players.push({ hand: [], passes: 0, status: "active" });
+    }
+    let first;
+    const board = [];
+    for (let s = 0; s < SUITS; s++) {
+      const row = [];
+      for (let r = 0; r < RANKS; r++) row.push(false);
+      board.push(row);
+    }
+    // 52枚を配ったときの♦7の位置で先手を決め、そのあと7を抜いた48枚を12枚ずつ配る
+    first = shuffled.indexOf(cardOf(CONFIG.START_SUIT, CENTER)) % CONFIG.PLAYER_COUNT;
+    const rest = shuffled.filter((card) => rankOf(card) !== CENTER);
+    for (let s = 0; s < SUITS; s++) board[s][CENTER - 1] = true;
+    rest.forEach((card, i) => { players[i % CONFIG.PLAYER_COUNT].hand.push(card); });
+    players.forEach((pl) => pl.hand.sort((a, b) => a - b));
+    return {
+      schemaVersion: CONFIG.SCHEMA_VERSION,
+      seed,
+      players,
+      board,
+      turn: first,
+      finishOrder: [],
+      dqOrder: [],
+      history: [],
+      phase: "playing",
+      lastEvent: { type: "start", player: first }
+    };
+  }
+
+  // 隣接判定:7より小さい札はひとつ上が、7より大きい札はひとつ下が場にあれば出せる。
+  // トンネル(AとK)はなし。差し替えるときはこの関数を変える。
+  function canPlay(state, card) {
+    const s = suitOf(card);
+    const r = rankOf(card);
+    const row = state.board[s];
+    if (row[r - 1]) return false;
+    if (r < CENTER) return row[r] === true;        // r+1 が置かれているか
+    if (r > CENTER) return row[r - 2] === true;    // r-1 が置かれているか
+    return false;
+  }
+
+  function legalCards(state, player) {
+    return state.players[player].hand.filter((c) => canPlay(state, c));
+  }
+
+  function isCpu(player) { return player !== CONFIG.HUMAN; }
+
+  function activeCount(state) {
+    return state.players.filter((p) => p.status === "active").length;
+  }
+
+  function nextActive(state, from) {
+    for (let i = 1; i <= CONFIG.PLAYER_COUNT; i++) {
+      const p = (from + i) % CONFIG.PLAYER_COUNT;
+      if (state.players[p].status === "active") return p;
+    }
+    return -1;
+  }
+
+  // 操作を検証して理由を返す。null なら合法
+  function validateAction(state, action) {
+    if (state.phase !== "playing") return "finished";
+    if (!action || typeof action !== "object") return "bad-action";
+    const p = state.turn;
+    if (state.players[p].status !== "active") return "not-active";
+    if (action.type === "pass") return null;
+    if (action.type === "play") {
+      if (!Number.isInteger(action.card)) return "bad-card";
+      if (!state.players[p].hand.includes(action.card)) return "not-in-hand";
+      if (!canPlay(state, action.card)) return "not-adjacent";
+      return null;
+    }
+    return "bad-action";
+  }
+
+  // 「今の状態＋操作 → 次の状態」。受け取った状態は書き換えない
+  function apply(state, action) {
+    const err = validateAction(state, action);
+    if (err) throw new Error(err);
+    const next = clone(state);
+    const p = next.turn;
+    const me = next.players[p];
+    if (action.type === "play") {
+      me.hand = me.hand.filter((c) => c !== action.card);
+      next.board[suitOf(action.card)][rankOf(action.card) - 1] = true;
+      next.lastEvent = { type: "play", player: p, card: action.card };
+      if (me.hand.length === 0) {
+        me.status = "finished";
+        next.finishOrder.push(p);
+        next.lastEvent = { type: "finish", player: p, card: action.card };
+      }
+    } else {
+      me.passes += 1;
+      if (me.passes > CONFIG.MAX_PASS) {
+        // 失格:手札をすべて場の正しい位置に置く
+        me.hand.forEach((c) => { next.board[suitOf(c)][rankOf(c) - 1] = true; });
+        next.lastEvent = { type: "disqualified", player: p, cards: me.hand.slice() };
+        me.hand = [];
+        me.status = "disqualified";
+        next.dqOrder.push(p);
+      } else {
+        next.lastEvent = { type: "pass", player: p, passes: me.passes };
+      }
+    }
+    next.history.push(action.type === "play" ? { type: "play", card: action.card } : { type: "pass" });
+    if (next.history.length > CONFIG.MAX_HISTORY) next.history.shift();
+
+    // 残りが1人以下なら終了。最後に残った人は「上がった人の次」の順位
+    if (activeCount(next) <= 1) {
+      next.players.forEach((pl, i) => {
+        if (pl.status === "active") { pl.status = "finished"; next.finishOrder.push(i); }
+      });
+      next.phase = "finished";
+      next.turn = -1;
+    } else {
+      next.turn = nextActive(next, p);
+    }
+    return next;
+  }
+
+  // 順位:上がった順 → 失格者は失格した順に下位(先に失格した人ほど下)
+  function ranking(state) {
+    return state.finishOrder.concat(state.dqOrder.slice().reverse());
+  }
+
+  // 保存データやテストで使う:同じシードと操作列から状態を再現する
+  function replay(seed, actions) {
+    let s = newGame(seed);
+    for (const a of actions) s = apply(s, a);
+    return s;
+  }
+
+  // 状態の形の検証。storage や将来の外部データ読み込みで使う。通らなければ null
+  function validateState(x) {
+    const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+    if (!x || typeof x !== "object" || Array.isArray(x)) return null;
+    if (x.schemaVersion !== CONFIG.SCHEMA_VERSION) return null;
+    if (!isInt(x.seed, -2147483648, 2147483647)) return null;
+    if (!Array.isArray(x.players) || x.players.length !== CONFIG.PLAYER_COUNT) return null;
+    if (!Array.isArray(x.board) || x.board.length !== SUITS) return null;
+    if (x.phase !== "playing" && x.phase !== "finished") return null;
+    if (!Array.isArray(x.finishOrder) || !Array.isArray(x.dqOrder) || !Array.isArray(x.history)) return null;
+    if (x.history.length > CONFIG.MAX_HISTORY) return null;
+    const seen = new Array(SUITS * RANKS).fill(false);
+    for (let s = 0; s < SUITS; s++) {
+      const row = x.board[s];
+      if (!Array.isArray(row) || row.length !== RANKS) return null;
+      for (let r = 0; r < RANKS; r++) {
+        if (typeof row[r] !== "boolean") return null;
+        if (row[r]) seen[cardOf(s, r + 1)] = true;
+      }
+    }
+    for (const pl of x.players) {
+      if (!pl || typeof pl !== "object" || !Array.isArray(pl.hand)) return null;
+      if (!isInt(pl.passes, 0, CONFIG.MAX_PASS + 1)) return null;
+      if (pl.status !== "active" && pl.status !== "finished" && pl.status !== "disqualified") return null;
+      if (pl.hand.length > RANKS) return null;
+      for (const c of pl.hand) {
+        if (!isInt(c, 0, SUITS * RANKS - 1) || seen[c]) return null;
+        seen[c] = true;
+      }
+    }
+    if (seen.some((v) => !v)) return null;   // 52枚がちょうど1回ずつ現れること
+    if (x.phase === "playing") {
+      if (!isInt(x.turn, 0, CONFIG.PLAYER_COUNT - 1) || x.players[x.turn].status !== "active") return null;
+    } else if (x.turn !== -1) return null;
+    for (const arr of [x.finishOrder, x.dqOrder]) {
+      if (arr.length > CONFIG.PLAYER_COUNT) return null;
+      for (const p of arr) if (!isInt(p, 0, CONFIG.PLAYER_COUNT - 1)) return null;
+    }
+    for (const h of x.history) {
+      if (!h || typeof h !== "object") return null;
+      if (h.type === "play") { if (!isInt(h.card, 0, SUITS * RANKS - 1)) return null; }
+      else if (h.type !== "pass") return null;
+    }
+    // 検証済みの形だけを取り出して返す(未知フィールドは無視)
+    return {
+      schemaVersion: x.schemaVersion,
+      seed: x.seed,
+      players: x.players.map((pl) => ({ hand: pl.hand.slice(), passes: pl.passes, status: pl.status })),
+      board: x.board.map((row) => row.slice()),
+      turn: x.turn,
+      finishOrder: x.finishOrder.slice(),
+      dqOrder: x.dqOrder.slice(),
+      history: x.history.map((h) => (h.type === "play" ? { type: "play", card: h.card } : { type: "pass" })),
+      phase: x.phase,
+      lastEvent: null
+    };
+  }
+
+  return {
+    SUITS, RANKS, CENTER,
+    cardOf, suitOf, rankOf,
+    newGame, canPlay, legalCards, isCpu, validateAction, apply, ranking, replay, validateState
+  };
+})();
+
+// ===== ai =====
+// 合法手判定は rules に任せ、ここでは「どれを出すか」だけを決める。
+// 方針:出せる札があればパスしない。複数あれば「その方向の先に自分の札が多い列」を優先。
+// 同点はシード付き乱数で選ぶ。乱数はシードと手数から作るので、同じシード・同じ操作列なら同じ手になる。
+const ai = (() => {
+  function score(state, player, card) {
+    const s = rules.suitOf(card);
+    const r = rules.rankOf(card);
+    let n = 0;
+    for (const c of state.players[player].hand) {
+      if (c === card || rules.suitOf(c) !== s) continue;
+      const cr = rules.rankOf(c);
+      if ((r < rules.CENTER && cr < r) || (r > rules.CENTER && cr > r)) n++;
+    }
+    return n;
+  }
+
+  function choose(state) {
+    const p = state.turn;
+    const legal = rules.legalCards(state, p);
+    if (legal.length === 0) return { type: "pass" };
+    let best = [];
+    let bestScore = -1;
+    for (const c of legal) {
+      const sc = score(state, p, c);
+      if (sc > bestScore) { bestScore = sc; best = [c]; }
+      else if (sc === bestScore) best.push(c);
+    }
+    const idx = rng.pick(rng.mix(state.seed, state.history.length), best.length);
+    return { type: "play", card: best[idx] };
+  }
+
+  return { choose, score };
+})();
+
+// ===== storage =====
+// localStorage のみを使う。読み込みは必ず rules.validateState を通し、壊れていれば null を返す。
+const storage = (() => {
+  const KEY = CONFIG.STORAGE_PREFIX + CONFIG.STORAGE_KEY;
+
+  function available() {
+    try { return typeof localStorage !== "undefined" && localStorage !== null; }
+    catch (e) { return false; }
+  }
+
+  function save(state) {
+    if (!available()) return false;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); return true; }
+    catch (e) { return false; }
+  }
+
+  // 戻り値:{ state, corrupted }。保存が無ければ state=null, corrupted=false
+  function load() {
+    if (!available()) return { state: null, corrupted: false };
+    let raw = null;
+    try { raw = localStorage.getItem(KEY); } catch (e) { return { state: null, corrupted: false }; }
+    if (raw === null) return { state: null, corrupted: false };
+    let parsed = null;
+    try { parsed = JSON.parse(raw); } catch (e) { return { state: null, corrupted: true }; }
+    const state = rules.validateState(parsed);
+    return { state, corrupted: state === null };
+  }
+
+  function clear() {
+    if (!available()) return;
+    try { localStorage.removeItem(KEY); } catch (e) { /* 消せなくても続行できる */ }
+  }
+
+  return { save, load, clear, KEY };
+})();
+
+// ===== ui =====
+// 描画とイベント処理。状態は直接書き換えず、必ず rules.apply を通す。
+const TEXT = {
+  title: "7並べ",
+  seedLabel: "シード:",
+  rules: "ルール",
+  newGame: "新規ゲーム",
+  boardTitle: "場",
+  handTitle: "あなたの手札",
+  play: "出す",
+  pass: "パス",
+  keyHint: "キー操作:← → で手札を選ぶ、Enter で出す、P でパス",
+  handStatus: (n, passes) => `${n}枚 / パス ${passes}/${CONFIG.MAX_PASS}`,
+  cards: (n) => `${n}枚`,
+  passes: (n) => `パス ${n}/${CONFIG.MAX_PASS}`,
+  statusFinished: "上がり",
+  statusDq: "失格",
+  yourTurn: "あなたの手番です。",
+  yourTurnNoPlay: "あなたの手番です。出せる札がないのでパスしてください。",
+  cpuPlayed: (name, card) => `${name}が ${card} を出しました。`,
+  cpuPassed: (name, n) => `${name}はパスしました(${n}/${CONFIG.MAX_PASS})。`,
+  finished: (name) => `${name}が上がりました。`,
+  disqualified: (name) => `${name}は4回目のパスで失格。手札をすべて場に置きました。`,
+  youPlayed: (card) => `あなたは ${card} を出しました。`,
+  youPassed: (n) => `あなたはパスしました(${n}/${CONFIG.MAX_PASS})。`,
+  gameStart: (name) => `ゲーム開始。先手は${name}(♦7を持っていました)。`,
+  gameOver: "ゲーム終了。",
+  resultTitle: "結果",
+  rank: (i, name) => `${i}位:${name}`,
+  rankDq: (i, name) => `${i}位:${name}(失格)`,
+  cannotPlay: "その札は今は出せません。",
+  selectFirst: "手札を選んでください。",
+  notYourTurn: "今はあなたの手番ではありません。",
+  restored: "中断したゲームを再開しました。",
+  corrupted: "保存データが壊れていたため破棄し、新しいゲームを始めました。",
+  rulesTitle: "採用ルール",
+  rulesList: [
+    "4人(あなた1人、CPU3人)。ジョーカーなし、52枚。",
+    "各スートの7を場に置き、残り48枚を12枚ずつ配ります。",
+    "先手は配札前に♦7を持っていた人。以後、時計回り。",
+    "出せるのは場の列に隣接する数字だけ(6→5→…→A、8→9→…→K)。",
+    "AとKはつながりません(トンネルなし)。",
+    "出せる札があってもパスできます。1人3回まで。4回目のパスで失格。",
+    "失格した人の手札は、場の正しい位置にすべて置かれます。",
+    "順位は手札を早く出し切った順。失格者は、失格した順に下位になります。",
+    "CPUは出せる札がある限りパスしません。",
+    "スートは記号と文字で表します(例:♥7 ハート)。"
+  ],
+  seedTitle: "シード",
+  seedDesc: "同じシードで始めて同じ操作をすると、同じ展開になります。数値を入れて新規開始できます。",
+  seedInputLabel: "シード(整数)",
+  seedStart: "このシードで開始",
+  seedInvalid: "シードには整数を入れてください。",
+  close: "閉じる",
+  cardLabel: (suitName, symbol, rank) => `${symbol}${rank} ${suitName}`
+};
+
+(function main() {
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    title: $("title"), seedLabel: $("seed-label"), seedValue: $("seed-value"),
+    btnRules: $("btn-rules"), btnNew: $("btn-new"), btnNew2: $("btn-new-2"),
+    notice: $("notice"), message: $("message"),
+    game: $("game"), boardTitle: $("board-title"), board: $("board"), players: $("players"),
+    handTitle: $("hand-title"), handStatus: $("hand-status"), hand: $("hand"),
+    btnPlay: $("btn-play"), btnPass: $("btn-pass"), keyHint: $("key-hint"),
+    result: $("result"), resultTitle: $("result-title"), resultList: $("result-list"),
+    rules: $("rules"), rulesTitle: $("rules-title"), rulesList: $("rules-list"),
+    seedTitle: $("seed-title"), seedDesc: $("seed-desc"), seedInputLabel: $("seed-input-label"),
+    seedInput: $("seed-input"), btnSeedStart: $("btn-seed-start"), btnRulesClose: $("btn-rules-close")
+  };
+
+  let state = null;
+  let selected = -1;        // 手札内の選択位置(ui だけが持つ一時情報。状態には含めない)
+  let cpuTimer = null;
+  let lastPlacedCard = -1;  // 直前に置かれた札を強調するため
+
+  function clearChildren(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+  function cardText(card) {
+    const s = content.suits[rules.suitOf(card)];
+    return s.symbol + content.ranks[rules.rankOf(card) - 1];
+  }
+  function cardLabel(card) {
+    const s = content.suits[rules.suitOf(card)];
+    return TEXT.cardLabel(s.name, s.symbol, content.ranks[rules.rankOf(card) - 1]);
+  }
+  function playerName(p) { return content.players[p]; }
+
+  function setStaticText() {
+    el.title.textContent = TEXT.title;
+    document.title = TEXT.title;
+    el.seedLabel.textContent = TEXT.seedLabel;
+    el.btnRules.textContent = TEXT.rules;
+    el.btnNew.textContent = TEXT.newGame;
+    el.btnNew2.textContent = TEXT.newGame;
+    el.boardTitle.textContent = TEXT.boardTitle;
+    el.handTitle.textContent = TEXT.handTitle;
+    el.btnPlay.textContent = TEXT.play;
+    el.btnPass.textContent = TEXT.pass;
+    el.keyHint.textContent = TEXT.keyHint;
+    el.resultTitle.textContent = TEXT.resultTitle;
+    el.rulesTitle.textContent = TEXT.rulesTitle;
+    clearChildren(el.rulesList);
+    TEXT.rulesList.forEach((t) => {
+      const li = document.createElement("li");
+      li.textContent = t;
+      el.rulesList.appendChild(li);
+    });
+    el.seedTitle.textContent = TEXT.seedTitle;
+    el.seedDesc.textContent = TEXT.seedDesc;
+    el.seedInputLabel.textContent = TEXT.seedInputLabel;
+    el.btnSeedStart.textContent = TEXT.seedStart;
+    el.btnRulesClose.textContent = TEXT.close;
+  }
+
+  function showNotice(text) {
+    el.notice.textContent = text;
+    el.notice.hidden = !text;
+  }
+  function say(text) { el.message.textContent = text; }
+
+  function eventMessage(ev) {
+    if (!ev) return "";
+    const name = playerName(ev.player);
+    const human = ev.player === CONFIG.HUMAN;
+    switch (ev.type) {
+      case "start": return TEXT.gameStart(name);
+      case "play": return human ? TEXT.youPlayed(cardLabel(ev.card)) : TEXT.cpuPlayed(name, cardLabel(ev.card));
+      case "pass": return human ? TEXT.youPassed(ev.passes) : TEXT.cpuPassed(name, ev.passes);
+      case "finish": return (human ? TEXT.youPlayed(cardLabel(ev.card)) : TEXT.cpuPlayed(name, cardLabel(ev.card))) + " " + TEXT.finished(name);
+      case "disqualified": return TEXT.disqualified(name);
+      default: return "";
+    }
+  }
+
+  function renderBoard() {
+    clearChildren(el.board);
+    for (let s = 0; s < rules.SUITS; s++) {
+      const suit = content.suits[s];
+      const row = document.createElement("div");
+      row.className = "suit-row";
+      const label = document.createElement("div");
+      label.className = "label " + suit.color;
+      label.textContent = suit.symbol;
+      label.setAttribute("aria-label", suit.name);
+      row.appendChild(label);
+      for (let r = 1; r <= rules.RANKS; r++) {
+        const cell = document.createElement("div");
+        const placed = state.board[s][r - 1];
+        const card = rules.cardOf(s, r);
+        cell.className = "slot" + (placed ? " placed " + suit.color : "") + (card === lastPlacedCard ? " just" : "");
+        cell.textContent = placed ? content.ranks[r - 1] : "";
+        if (placed) cell.setAttribute("aria-label", cardLabel(card));
+        row.appendChild(cell);
+      }
+      el.board.appendChild(row);
+    }
+  }
+
+  function renderPlayers() {
+    clearChildren(el.players);
+    state.players.forEach((pl, i) => {
+      if (i === CONFIG.HUMAN) return;
+      const box = document.createElement("div");
+      box.className = "player" + (state.turn === i ? " turn" : "");
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = playerName(i);
+      const info = document.createElement("div");
+      if (pl.status === "finished") info.textContent = TEXT.statusFinished;
+      else if (pl.status === "disqualified") info.textContent = TEXT.statusDq;
+      else info.textContent = TEXT.cards(pl.hand.length) + " / " + TEXT.passes(pl.passes);
+      box.appendChild(name);
+      box.appendChild(info);
+      el.players.appendChild(box);
+    });
+  }
+
+  function renderHand() {
+    clearChildren(el.hand);
+    const me = state.players[CONFIG.HUMAN];
+    const myTurn = state.phase === "playing" && state.turn === CONFIG.HUMAN;
+    if (selected >= me.hand.length) selected = me.hand.length - 1;
+    me.hand.forEach((card, i) => {
+      const suit = content.suits[rules.suitOf(card)];
+      const b = document.createElement("button");
+      b.type = "button";
+      const playable = myTurn && rules.canPlay(state, card);
+      b.className = "card " + suit.color + (playable ? " playable" : "") + (i === selected ? " selected" : "");
+      b.setAttribute("role", "option");
+      b.setAttribute("aria-selected", i === selected ? "true" : "false");
+      b.setAttribute("aria-label", cardLabel(card));
+      b.dataset.index = String(i);
+      b.tabIndex = i === (selected < 0 ? 0 : selected) ? 0 : -1;
+      const mark = document.createElement("span");
+      mark.className = "mark";
+      mark.textContent = suit.symbol;
+      const rank = document.createElement("span");
+      rank.textContent = content.ranks[rules.rankOf(card) - 1];
+      b.appendChild(mark);
+      b.appendChild(rank);
+      b.addEventListener("click", () => { selected = i; renderHand(); focusSelected(); });
+      el.hand.appendChild(b);
+    });
+    el.handStatus.textContent = TEXT.handStatus(me.hand.length, me.passes);
+    el.btnPlay.disabled = !myTurn;
+    el.btnPass.disabled = !myTurn;
+  }
+
+  function focusSelected() {
+    const btn = el.hand.querySelector('[data-index="' + selected + '"]');
+    if (btn) btn.focus();
+  }
+
+  function renderResult() {
+    const over = state.phase === "finished";
+    el.result.hidden = !over;
+    if (!over) return;
+    clearChildren(el.resultList);
+    const order = rules.ranking(state);
+    order.forEach((p, i) => {
+      const li = document.createElement("li");
+      const dq = state.players[p].status === "disqualified";
+      li.textContent = dq ? TEXT.rankDq(i + 1, playerName(p)) : TEXT.rank(i + 1, playerName(p));
+      el.resultList.appendChild(li);
+    });
+  }
+
+  function render() {
+    el.seedValue.textContent = String(state.seed);
+    renderBoard();
+    renderPlayers();
+    renderHand();
+    renderResult();
+  }
+
+  function announceTurn() {
+    if (state.phase !== "playing" || state.turn !== CONFIG.HUMAN) return;
+    const legal = rules.legalCards(state, CONFIG.HUMAN);
+    const base = el.message.textContent ? el.message.textContent + " " : "";
+    say(base + (legal.length ? TEXT.yourTurn : TEXT.yourTurnNoPlay));
+  }
+
+  // 状態を差し替えたあとの共通処理:保存 → 描画 → 次の手番の進行
+  function commit(next) {
+    state = next;
+    if (state.lastEvent && (state.lastEvent.type === "play" || state.lastEvent.type === "finish")) {
+      lastPlacedCard = state.lastEvent.card;
+    } else lastPlacedCard = -1;
+    storage.save(state);
+    render();
+    say(eventMessage(state.lastEvent));
+    if (state.phase === "finished") {
+      say(el.message.textContent + " " + TEXT.gameOver);
+      return;
+    }
+    if (rules.isCpu(state.turn)) scheduleCpu();
+    else announceTurn();
+  }
+
+  function scheduleCpu() {
+    if (cpuTimer !== null) return;
+    cpuTimer = setTimeout(() => {
+      cpuTimer = null;
+      if (state.phase !== "playing" || !rules.isCpu(state.turn)) return;
+      commit(rules.apply(state, ai.choose(state)));
+    }, CONFIG.CPU_DELAY_MS);
+  }
+
+  function cancelCpu() {
+    if (cpuTimer !== null) { clearTimeout(cpuTimer); cpuTimer = null; }
+  }
+
+  function humanAction(action) {
+    if (state.phase !== "playing" || state.turn !== CONFIG.HUMAN) { say(TEXT.notYourTurn); return; }
+    const err = rules.validateAction(state, action);
+    if (err) { say(TEXT.cannotPlay); return; }
+    commit(rules.apply(state, action));
+  }
+
+  function playSelected() {
+    const me = state.players[CONFIG.HUMAN];
+    if (selected < 0 || selected >= me.hand.length) { say(TEXT.selectFirst); return; }
+    humanAction({ type: "play", card: me.hand[selected] });
+  }
+
+  function startNew(seed) {
+    cancelCpu();
+    selected = -1;
+    lastPlacedCard = -1;
+    showNotice("");
+    el.rules.hidden = true;
+    el.game.hidden = false;
+    commit(rules.newGame(seed));
+  }
+
+  // シードは ui 側で決める(rules は受け取るだけ)。Date.now は ui なので使ってよい
+  function freshSeed() { return (Date.now() ^ (performance.now() * 1000)) | 0; }
+
+  function moveSelection(delta) {
+    const n = state.players[CONFIG.HUMAN].hand.length;
+    if (n === 0) return;
+    selected = selected < 0 ? (delta > 0 ? 0 : n - 1) : (selected + delta + n) % n;
+    renderHand();
+    focusSelected();
+  }
+
+  function onKey(e) {
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    if (!el.rules.hidden) return;
+    if (e.key === "ArrowLeft") { e.preventDefault(); moveSelection(-1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); moveSelection(1); }
+    else if (e.key === "Enter") {
+      // ボタンにフォーカスがあるときは、そのボタン自身の動作(click)に任せる
+      if (t && t.tagName === "BUTTON" && !t.classList.contains("card")) return;
+      e.preventDefault();
+      playSelected();
+    }
+    else if (e.key === "p" || e.key === "P") { e.preventDefault(); humanAction({ type: "pass" }); }
+  }
+
+  function toggleRules(show) {
+    el.rules.hidden = !show;
+    el.game.hidden = show;
+    if (show) { el.seedInput.value = String(state.seed); el.btnRulesClose.focus(); }
+    else el.btnRules.focus();
+  }
+
+  function init() {
+    setStaticText();
+    el.btnRules.addEventListener("click", () => toggleRules(el.rules.hidden));
+    el.btnRulesClose.addEventListener("click", () => toggleRules(false));
+    el.btnNew.addEventListener("click", () => startNew(freshSeed()));
+    el.btnNew2.addEventListener("click", () => startNew(freshSeed()));
+    el.btnPlay.addEventListener("click", playSelected);
+    el.btnPass.addEventListener("click", () => humanAction({ type: "pass" }));
+    el.btnSeedStart.addEventListener("click", () => {
+      const v = el.seedInput.value.trim();
+      if (!/^-?\d{1,10}$/.test(v)) { showNotice(TEXT.seedInvalid); return; }
+      startNew(Number(v) | 0);
+    });
+    document.addEventListener("keydown", onKey);
+
+    const loaded = storage.load();
+    if (loaded.state) {
+      state = loaded.state;
+      render();
+      say(TEXT.restored);
+      if (state.phase === "playing") {
+        if (rules.isCpu(state.turn)) scheduleCpu(); else announceTurn();
+      } else say(TEXT.restored + " " + TEXT.gameOver);
+    } else {
+      startNew(freshSeed());
+      if (loaded.corrupted) showNotice(TEXT.corrupted);
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

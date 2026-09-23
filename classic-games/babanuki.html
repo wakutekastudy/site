@@ -1,0 +1,792 @@
+<!--
+  ============================================================
+  わくてかスタディ研究所 ひな型: ババ抜き
+  ============================================================
+  ゲーム名      : ババ抜き / babanuki
+  版            : 0.1
+  最終更新日    : 2026-09-23(SD-004/007/008/009の反映)
+  ライセンス    : MIT-0(shared-decisions.md SD-007で決定)
+  配置パス      : classic-games/babanuki.html(shared-decisions.md SD-004)
+
+  [3軸チェック結果] (shared-decisions.md SD-001)
+    ① メカニクス : 伝統的トランプゲーム。SD-001 の例示で「一般に安全側」に含まれる → 問題なし
+    ② 名称       : 「ババ抜き」は一般名称(特定企業の商標ではない) → 問題なし。英語スラッグは babanuki
+    ③ 表現       : カードは Unicode のスート記号 + 数字のみの独自描画。既存製品のデザインを流用しない → 問題なし
+
+  [採用ルール] (運営者未確認。標準的なルールを採用したので要確認)
+    - 4人 (人間1 + CPU3)、52枚 + ジョーカー1枚
+    - 全カードを順に配り、初期手札の同ランクペアを捨てる
+    - 手番プレイヤーは次の(時計回りで手札が残る)プレイヤーの手札から裏向きに1枚引く
+    - 引いた札と同ランクがあればペアで捨てる
+    - 手札が0枚になった順に上がり。最後に1人残った人(ジョーカー保持者)が負け
+    - 同時に上がった場合は「引いた側 → 引かれた側」の順で順位を付ける
+    - CPUは引く位置をシード付き乱数で決める (乱数状態は state.rng に保持)
+    - CPUの強さ: 引く位置を一様乱数で選ぶ(引く側に情報がないゲームなので、強さの差は付けない)
+
+  [流用できる部品]
+    - rng (xorshift32: seed → 状態 → [0,1))、rng.shuffle (Fisher–Yates、純粋関数)
+    - rules.removePairsFromHand (同ランクのペア除去)、順位付け(finishedRank)と最後の1人を負けとする終了判定
+    - storage (localStorage 読み書き + rules.validateState によるスキーマ検証。壊れていれば null)
+    - CONFIG (仮の値を1か所に集約)、ui の裏向き札選択(ボタン列 + 矢印キーの巡回選択)
+
+  [転用メモ] (template-guideline.md 第7章)
+    1. 仕組みの核: 「相手の伏せた手札から1枚引き、同じ値と組になったら捨てる。最後まで組にならない1枚(ジョーカー)を持っていた人が負け」
+    2. 転用アイディア:
+       - 数字を「用語」、同ランクの組を「用語と定義」に置き換え、引いた札の定義を持っていればペアで捨てる(用語カード合わせ)
+       - スートを「言語」、ランクを「意味」に置き換え、同じ意味の英単語/日本語を合わせる語彙ゲーム
+       - ジョーカーを「誤答カード(よくある誤解)」にして、最後に残った人がその誤解の解説を読む
+    3. 差し替える箇所: content.suits / content.ranks / content.cardLabel、rules.rankOf (組の判定)、CONFIG.playerCount / jokerCount
+
+  [セキュリティ確認] 外部通信 0件 / HTML文字列挿入・動的コード実行 0件 / rules・ai・rng・content・storage は DOM 非参照
+  ============================================================
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<title>ババ抜き</title>
+<style>
+  /* handoff-brief.md 第5章のデザイントークン */
+  :root {
+    --ink: #14213D;
+    --ink-soft: #4A5578;
+    --paper: #FCFAF7;
+    --paper-warm: #F3ECDC;
+    --spark: #FFC145;
+    --coral: #FF6B57;
+    /* --coral は --paper 上で 2.69:1 と文字色には不足するため、赤スート文字用に濃い別トークンを定義 (5.74:1) */
+    --coral-text: #B8321F;
+    --bg: var(--paper);
+    --panel: #FFFFFF;
+    --text: var(--ink);
+    --muted: var(--ink-soft);
+    --accent: var(--ink);
+    --accent-text: var(--paper);
+    --cta: var(--spark);
+    --cta-text: var(--ink);
+    --card-back: var(--ink);
+    --card-back-text: var(--spark);
+    --border: #D9D2C5;
+    --focus: #005FCC;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: var(--ink);
+      --panel: #1B2A4A;
+      --text: #E6E1D6;
+      --muted: #B8B3A8;
+      --accent: var(--spark);
+      --accent-text: var(--ink);
+      --coral-text: #FF9C8C; /* 暗背景 #1B2A4A 上で 7.03:1 */
+      --card-back: #2F4B8A;
+      --card-back-text: var(--paper);
+      --border: #3A4A6E;
+      --focus: var(--spark);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+    font-size: 1rem; line-height: 1.5; }
+  body { max-width: 960px; margin: 0 auto; padding: .5rem; overflow-x: hidden; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+  header h1 { font-size: 1.4rem; margin: 0; flex: 1 1 auto;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; }
+  button { font: inherit; padding: .375rem .75rem; border-radius: .5rem; border: 1px solid var(--accent);
+    background: var(--accent); color: var(--accent-text); cursor: pointer; min-height: 2.75rem; }
+  button.primary { background: var(--cta); color: var(--cta-text); border-color: var(--cta); }
+  button.secondary { background: var(--panel); color: var(--text); border-color: var(--border); }
+  button:disabled { opacity: .5; cursor: default; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .notice { background: var(--paper-warm); color: var(--ink); border-left: 4px solid var(--coral); padding: .375rem .625rem; margin-bottom: .5rem; border-radius: 4px; }
+  .notice:empty { display: none; }
+  .message { min-height: 2.5em; padding: 6px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; }
+  .message[aria-live] { font-weight: 600; }
+  .players { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .5rem; margin-bottom: .5rem; }
+  .player { background: var(--panel); border: 2px solid var(--border); border-radius: 10px; padding: .5rem; min-width: 0; }
+  .player.current { border-color: var(--spark); }
+  .player.target { border-color: var(--coral); }
+  .player.finished { opacity: .7; }
+  .player h2 { font-size: 1rem; margin: 0 0 4px; display: flex; justify-content: space-between; gap: 4px; flex-wrap: wrap; }
+  .player .count { color: var(--muted); font-size: .9rem; }
+  .hand { display: flex; flex-wrap: wrap; gap: 4px; }
+  .card { width: 2.5rem; height: 3.5rem; border-radius: 5px; border: 1px solid var(--ink-soft); background: var(--panel);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: .95rem; padding: 0; line-height: 1.1; color: var(--text); }
+  .card.red { color: var(--coral-text); }
+  .card.joker { color: var(--coral-text); font-weight: 700; font-size: .7rem; }
+  .card.back { background: var(--card-back); border-color: var(--ink-soft); color: var(--card-back-text); }
+  .card.back.selectable { cursor: pointer; }
+  .card.back.selectable:hover, .card.back.selected { transform: translateY(-4px); box-shadow: 0 4px 6px rgba(0,0,0,.3); }
+  .card.mini { width: .875rem; height: 1.25rem; border-radius: 3px; font-size: 0; }
+  .human .hand .card { width: 2.75rem; height: 3.875rem; }
+  .status { display: flex; flex-wrap: wrap; gap: .75rem; color: var(--muted); font-size: .9rem; margin-bottom: .5rem; }
+  dialog { border: 1px solid var(--border); border-radius: 12px; padding: 16px; max-width: min(92vw, 560px); color: var(--text); background: var(--panel); }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  dialog h2 { margin-top: 0; }
+  dialog ul { padding-left: 1.2em; }
+  .seedrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+  .seedrow input { font: inherit; padding: 6px; border: 1px solid var(--border); border-radius: 6px; width: 10em; max-width: 100%; }
+  .result { background: var(--paper-warm); color: var(--ink); border: 2px solid var(--spark); border-radius: 10px; padding: .625rem; margin-bottom: .5rem; }
+  .result ol { margin: 4px 0; padding-left: 1.5em; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .log { font-size: .85rem; color: var(--muted); max-height: 7em; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+  .log p { margin: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ババ抜き</h1>
+  <button id="btnRules" class="secondary" type="button">ルール / シード (R)</button>
+  <button id="btnNew" class="primary" type="button">新規ゲーム (N)</button>
+</header>
+<div id="notice" class="notice" role="status"></div>
+<div id="message" class="message" aria-live="polite"></div>
+<div id="result"></div>
+<div id="players" class="players"></div>
+<div class="status">
+  <span>シード: <span id="seedView"></span></span>
+  <span>手番数: <span id="moveView"></span></span>
+  <span>捨て札: <span id="discardView"></span>枚</span>
+</div>
+<div id="log" class="log" aria-label="ログ"></div>
+
+<dialog id="rulesDialog" aria-labelledby="rulesTitle">
+  <h2 id="rulesTitle">ルール</h2>
+  <ul id="rulesList"></ul>
+  <h3>キーボード操作</h3>
+  <ul id="keysList"></ul>
+  <form method="dialog" class="seedrow" id="seedForm">
+    <label for="seedInput">シード (現在: <span id="seedCurrent"></span>)</label>
+    <input id="seedInput" name="seed" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+    <button type="submit" value="start" class="primary">このシードで新規開始</button>
+    <button type="button" id="btnCloseRules" class="secondary">閉じる</button>
+  </form>
+</dialog>
+
+<script>
+'use strict';
+/* ============================================================
+   CONFIG — 仮の値はここに集約 (独断で確定しない)
+   ============================================================ */
+const CONFIG = Object.freeze({
+  gameId: 'babanuki',
+  schemaVersion: 1,
+  storagePrefix: 'wktks.',             // shared-decisions.md SD-008
+  storageKey: 'wktks.game.babanuki',   // = storagePrefix + 'game.' + gameId
+  deployPath: '/classic-games/babanuki.html', // shared-decisions.md SD-004
+  license: 'MIT-0',                     // shared-decisions.md SD-007
+  maxLogLines: 200,                    // 仮 表示ログの上限(フリーズ防止)
+  playerCount: 4,                     // 仮 (人間1 + CPU3)
+  jokerCount: 1,                      // 仮
+  cpuDelayMs: 700,                    // 仮 CPUの間
+  playerNames: ['あなた', 'CPU 1', 'CPU 2', 'CPU 3'], // 仮
+  keys: {                             // 仮
+    left: ['ArrowLeft', 'ArrowUp'],
+    right: ['ArrowRight', 'ArrowDown'],
+    draw: ['Enter', ' '],
+    newGame: ['n', 'N'],
+    rules: ['r', 'R'],
+  },
+});
+
+/* ============================================================
+   rng — シード付き乱数 (xorshift32)。DOM非参照
+   ============================================================ */
+const rng = (() => {
+  function seedToState(seed) {
+    let s = (Number(seed) >>> 0) || 0x9e3779b9;
+    // 初期化のかたよりを減らすため数回回す
+    for (let i = 0; i < 4; i++) s = step(s);
+    return s;
+  }
+  function step(s) {
+    s ^= s << 13; s >>>= 0;
+    s ^= s >>> 17;
+    s ^= s << 5; s >>>= 0;
+    return s === 0 ? 0x9e3779b9 : s;
+  }
+  // 戻り値: { value: [0,1), state }
+  function next(state) {
+    const s = step(state);
+    return { value: s / 4294967296, state: s };
+  }
+  function nextInt(state, n) {
+    const r = next(state);
+    return { value: Math.floor(r.value * n), state: r.state };
+  }
+  function shuffle(array, state) {
+    const a = array.slice();
+    let s = state;
+    for (let i = a.length - 1; i > 0; i--) {
+      const r = nextInt(s, i + 1);
+      s = r.state;
+      const t = a[i]; a[i] = a[r.value]; a[r.value] = t;
+    }
+    return { value: a, state: s };
+  }
+  return Object.freeze({ seedToState, next, nextInt, shuffle });
+})();
+
+/* ============================================================
+   content — 表示文言・カード名 (DOM非参照)
+   ============================================================ */
+const content = (() => {
+  const suits = ['♠', '♥', '♦', '♣'];
+  const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  function cardLabel(cardId) {
+    if (cardId >= 52) return 'JOKER';
+    return suits[Math.floor(cardId / 13)] + ranks[cardId % 13];
+  }
+  function cardIsRed(cardId) {
+    const suit = Math.floor(cardId / 13);
+    return cardId < 52 && (suit === 1 || suit === 2);
+  }
+  const rulesText = [
+    `${CONFIG.playerCount}人で遊びます(あなた + CPU ${CONFIG.playerCount - 1}人)。52枚 + ジョーカー${CONFIG.jokerCount}枚を全員に配ります。`,
+    '配られた手札のうち、同じ数字のペアは先に捨てられます。',
+    '自分の手番では、次のプレイヤー(手札が残っている人)の裏向きの手札から1枚選んで引きます。',
+    '引いた札と同じ数字の札を持っていれば、その2枚を捨てます。',
+    '手札が0枚になった人から順に上がりです。最後に1人残った人(ジョーカーを持っている人)が負けです。',
+    '同時に上がった場合は、引いた側 → 引かれた側の順で順位が付きます。',
+    'CPUは引く位置を乱数で決めます。同じシードと同じ操作なら同じ展開になります。',
+  ];
+  const keysText = [
+    '← / → (↑ / ↓): 引く札を選ぶ',
+    'Enter / Space: 選んだ札を引く',
+    'N: 新規ゲーム',
+    'R: このルール画面を開く / 閉じる',
+    'Tab: ボタン間の移動',
+  ];
+  const messages = {
+    yourTurn: (name) => `あなたの手番です。${name} の手札から1枚選んでください。`,
+    cpuTurn: (name) => `${name} が引いています…`,
+    drewPair: (drawer, label, pairLabel) => `${drawer} が ${label} を引き、${pairLabel} とペアで捨てました。`,
+    drewKeep: (drawer, target) => `${drawer} が ${target} から1枚引きました。`,
+    drewKeepHuman: (label, target) => `あなたは ${target} から ${label} を引きました。`,
+    finished: (name, rank) => `${name} が ${rank}位で上がりました。`,
+    gameOver: (loser) => `ゲーム終了。${loser} の負けです(ジョーカー保持)。`,
+    storageBroken: '保存データが読めなかったため、新しいゲームを開始しました。',
+    restored: '保存されていたゲームを再開しました。',
+    newGame: (seed) => `新しいゲームを開始しました(シード ${seed})。`,
+    youWon: (rank) => `あなたは ${rank}位で上がりました。残りはCPU同士で進みます。`,
+  };
+  return Object.freeze({ cardLabel, cardIsRed, rulesText, keysText, messages });
+})();
+
+/* ============================================================
+   rules — 純粋なゲームロジック (DOM非参照)
+   state は JSON 化可能なプレーンオブジェクト。applyMove は新しい state を返す
+   ============================================================ */
+const rules = (() => {
+  const JOKER_BASE = 52;
+
+  function rankOf(cardId) { return cardId >= JOKER_BASE ? -1 : cardId % 13; }
+
+  function clone(state) { return JSON.parse(JSON.stringify(state)); }
+
+  function removePairsFromHand(hand) {
+    // ランクごとに数え、2枚ずつペアとして取り除く(決定的な順序)
+    const byRank = new Map();
+    for (const c of hand) {
+      const r = rankOf(c);
+      if (r < 0) continue;
+      if (!byRank.has(r)) byRank.set(r, []);
+      byRank.get(r).push(c);
+    }
+    const removed = new Set();
+    const pairs = [];
+    for (const [, cards] of [...byRank.entries()].sort((a, b) => a[0] - b[0])) {
+      cards.sort((a, b) => a - b);
+      while (cards.length >= 2) {
+        const a = cards.shift(), b = cards.shift();
+        removed.add(a); removed.add(b);
+        pairs.push([a, b]);
+      }
+    }
+    return { hand: hand.filter((c) => !removed.has(c)), pairs };
+  }
+
+  function createGame(seed, options) {
+    const playerCount = options.playerCount;
+    const jokerCount = options.jokerCount;
+    const names = options.playerNames;
+    let s = rng.seedToState(seed);
+    const deck = [];
+    for (let i = 0; i < 52; i++) deck.push(i);
+    for (let j = 0; j < jokerCount; j++) deck.push(JOKER_BASE + j);
+    const sh = rng.shuffle(deck, s);
+    s = sh.state;
+    const players = [];
+    for (let p = 0; p < playerCount; p++) {
+      players.push({ name: names[p] || `P${p + 1}`, cpu: p !== 0, hand: [], finishedRank: null });
+    }
+    sh.value.forEach((c, i) => { players[i % playerCount].hand.push(c); });
+    const discards = [];
+    for (const pl of players) {
+      const r = removePairsFromHand(pl.hand);
+      pl.hand = r.hand.slice().sort((a, b) => a - b);
+      discards.push(...r.pairs);
+    }
+    // 最初の手番: 先頭のプレイヤー(誰かの手札が0ならスキップ)
+    const state = {
+      gameId: CONFIG.gameId,
+      schemaVersion: CONFIG.schemaVersion,
+      seed: Number(seed) >>> 0,
+      rng: s,
+      players,
+      discards,
+      turn: 0,
+      moveCount: 0,
+      phase: 'playing',
+      nextRank: 1,
+      lastEvent: null,
+    };
+    assignFinishes(state, []);
+    checkGameOver(state);
+    if (state.phase === 'playing' && !isActive(state, state.turn)) state.turn = nextActive(state, state.turn);
+    return state;
+  }
+
+  function isActive(state, idx) { return state.players[idx].finishedRank === null; }
+
+  function activeIndices(state) {
+    return state.players.map((_, i) => i).filter((i) => isActive(state, i));
+  }
+
+  function nextActive(state, from) {
+    const n = state.players.length;
+    for (let k = 1; k <= n; k++) {
+      const i = (from + k) % n;
+      if (isActive(state, i)) return i;
+    }
+    return from;
+  }
+
+  function targetOf(state) {
+    if (state.phase !== 'playing') return -1;
+    return nextActive(state, state.turn);
+  }
+
+  function legalMoves(state) {
+    const t = targetOf(state);
+    if (t < 0) return [];
+    return state.players[t].hand.map((_, i) => ({ type: 'draw', index: i }));
+  }
+
+  function assignFinishes(state, order) {
+    // order: 優先して順位を付けるプレイヤーindexの配列。残りはindex順
+    const seq = [...order, ...state.players.map((_, i) => i)];
+    for (const i of seq) {
+      const p = state.players[i];
+      if (p.finishedRank === null && p.hand.length === 0) {
+        p.finishedRank = state.nextRank++;
+        if (state.lastEvent) state.lastEvent.finished.push(i);
+      }
+    }
+  }
+
+  function checkGameOver(state) {
+    const active = activeIndices(state);
+    if (active.length <= 1) {
+      state.phase = 'finished';
+      if (active.length === 1) {
+        const loser = active[0];
+        state.players[loser].finishedRank = state.nextRank++;
+        state.loser = loser;
+      }
+    }
+  }
+
+  function applyMove(prev, move) {
+    if (prev.phase !== 'playing') throw new Error('game is finished');
+    if (!move || move.type !== 'draw') throw new Error('unknown move');
+    const state = clone(prev);
+    const drawerIdx = state.turn;
+    const targetIdx = targetOf(state);
+    const target = state.players[targetIdx];
+    if (!(Number.isInteger(move.index) && move.index >= 0 && move.index < target.hand.length)) {
+      throw new Error('illegal index');
+    }
+    const drawer = state.players[drawerIdx];
+    const card = target.hand.splice(move.index, 1)[0];
+    const r = rankOf(card);
+    const matchIdx = r < 0 ? -1 : drawer.hand.findIndex((c) => rankOf(c) === r);
+    state.lastEvent = { drawer: drawerIdx, target: targetIdx, card, pair: null, finished: [] };
+    if (matchIdx >= 0) {
+      const mate = drawer.hand.splice(matchIdx, 1)[0];
+      state.discards.push([mate, card].sort((a, b) => a - b));
+      state.lastEvent.pair = mate;
+    } else {
+      drawer.hand.push(card);
+      drawer.hand.sort((a, b) => a - b);
+    }
+    state.moveCount++;
+    assignFinishes(state, [drawerIdx, targetIdx]);
+    checkGameOver(state);
+    if (state.phase === 'playing') state.turn = nextActive(state, drawerIdx);
+    return state;
+  }
+
+  function ranking(state) {
+    return state.players
+      .map((p, i) => ({ index: i, name: p.name, rank: p.finishedRank }))
+      .filter((x) => x.rank !== null)
+      .sort((a, b) => a.rank - b.rank);
+  }
+
+  // 保存データの検証。妥当なら true
+  function validateState(x) {
+    if (!x || typeof x !== 'object') return false;
+    if (x.gameId !== CONFIG.gameId || x.schemaVersion !== CONFIG.schemaVersion) return false;
+    if (!Number.isInteger(x.seed) || !Number.isInteger(x.rng)) return false;
+    if (!Array.isArray(x.players) || x.players.length !== CONFIG.playerCount) return false;
+    const seen = new Set();
+    for (const p of x.players) {
+      if (!p || typeof p.name !== 'string' || typeof p.cpu !== 'boolean' || !Array.isArray(p.hand)) return false;
+      if (!(p.finishedRank === null || Number.isInteger(p.finishedRank))) return false;
+      for (const c of p.hand) {
+        if (!Number.isInteger(c) || c < 0 || c >= 52 + CONFIG.jokerCount || seen.has(c)) return false;
+        seen.add(c);
+      }
+    }
+    if (!Array.isArray(x.discards)) return false;
+    for (const pair of x.discards) {
+      if (!Array.isArray(pair) || pair.length !== 2) return false;
+      for (const c of pair) {
+        if (!Number.isInteger(c) || c < 0 || c >= 52 || seen.has(c)) return false;
+        seen.add(c);
+      }
+    }
+    if (seen.size !== 52 + CONFIG.jokerCount) return false;
+    if (!Number.isInteger(x.turn) || x.turn < 0 || x.turn >= x.players.length) return false;
+    if (!Number.isInteger(x.moveCount) || !Number.isInteger(x.nextRank)) return false;
+    if (x.phase !== 'playing' && x.phase !== 'finished') return false;
+    return true;
+  }
+
+  return Object.freeze({ JOKER_BASE, rankOf, createGame, applyMove, legalMoves, targetOf, ranking, validateState, isActive });
+})();
+
+/* ============================================================
+   ai — CPUの手の選択 (DOM非参照)。乱数状態は state に持たせる
+   ============================================================ */
+const ai = (() => {
+  // 戻り値: { move, state } (state は rng を進めた新しい state)
+  function chooseMove(state) {
+    const moves = rules.legalMoves(state);
+    if (moves.length === 0) return { move: null, state };
+    const r = rng.nextInt(state.rng, moves.length);
+    const next = Object.assign({}, state, { rng: r.state });
+    return { move: moves[r.value], state: next };
+  }
+  return Object.freeze({ chooseMove });
+})();
+
+/* ============================================================
+   storage — localStorage 読み書き (壊れていれば null)
+   ============================================================ */
+const storage = (() => {
+  function getStore() {
+    try { return globalThis.localStorage || null; } catch (e) { return null; }
+  }
+  // 戻り値: { state, error } error: 'none' | 'empty' | 'broken'
+  function load() {
+    const store = getStore();
+    if (!store) return { state: null, error: 'empty' };
+    let raw = null;
+    try { raw = store.getItem(CONFIG.storageKey); } catch (e) { return { state: null, error: 'broken' }; }
+    if (raw === null) return { state: null, error: 'empty' };
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (e) { return { state: null, error: 'broken' }; }
+    if (!rules.validateState(parsed)) return { state: null, error: 'broken' };
+    return { state: parsed, error: 'none' };
+  }
+  function save(state) {
+    const store = getStore();
+    if (!store) return false;
+    try { store.setItem(CONFIG.storageKey, JSON.stringify(state)); return true; } catch (e) { return false; }
+  }
+  function clear() {
+    const store = getStore();
+    if (!store) return;
+    try { store.removeItem(CONFIG.storageKey); } catch (e) { /* ignore */ }
+  }
+  return Object.freeze({ load, save, clear });
+})();
+
+/* ============================================================
+   ui — DOM 操作 (createElement / textContent のみ)
+   ============================================================ */
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    notice: $('notice'), message: $('message'), result: $('result'), players: $('players'),
+    seedView: $('seedView'), moveView: $('moveView'), discardView: $('discardView'), log: $('log'),
+    dialog: $('rulesDialog'), rulesList: $('rulesList'), keysList: $('keysList'),
+    seedForm: $('seedForm'), seedInput: $('seedInput'), seedCurrent: $('seedCurrent'),
+    btnRules: $('btnRules'), btnNew: $('btnNew'), btnClose: $('btnCloseRules'),
+  };
+
+  let state = null;
+  let selected = 0;        // 人間の手番で選択中の札位置
+  let cpuTimer = 0;
+  const logLines = [];
+
+  function text(tag, str, cls) {
+    const n = document.createElement(tag);
+    if (str !== undefined) n.textContent = str;
+    if (cls) n.className = cls;
+    return n;
+  }
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+  function randomSeed() {
+    const a = new Uint32Array(1);
+    if (globalThis.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
+    else a[0] = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
+    return a[0] >>> 0;
+  }
+
+  function addLog(line) {
+    logLines.push(line);
+    if (logLines.length > CONFIG.maxLogLines) logLines.shift();
+    clear(el.log);
+    for (let i = logLines.length - 1; i >= 0; i--) el.log.appendChild(text('p', logLines[i]));
+  }
+
+  function setMessage(str) { el.message.textContent = str; }
+  function setNotice(str) { el.notice.textContent = str || ''; }
+
+  function humanIndex() { return state.players.findIndex((p) => !p.cpu); }
+  function isHumanTurn() {
+    return state.phase === 'playing' && !state.players[state.turn].cpu;
+  }
+
+  function describeEvent(prev, next) {
+    const ev = next.lastEvent;
+    if (!ev) return;
+    const drawer = next.players[ev.drawer];
+    const target = next.players[ev.target];
+    const m = content.messages;
+    if (ev.pair !== null) {
+      addLog(m.drewPair(drawer.name, content.cardLabel(ev.card), content.cardLabel(ev.pair)));
+    } else if (!drawer.cpu) {
+      addLog(m.drewKeepHuman(content.cardLabel(ev.card), target.name));
+    } else {
+      addLog(m.drewKeep(drawer.name, target.name));
+    }
+    for (const i of ev.finished) {
+      const p = next.players[i];
+      addLog(m.finished(p.name, p.finishedRank));
+      if (!p.cpu) setNotice(m.youWon(p.finishedRank));
+    }
+    if (next.phase === 'finished' && prev.phase !== 'finished' && typeof next.loser === 'number') {
+      addLog(m.gameOver(next.players[next.loser].name));
+    }
+  }
+
+  function commit(next) {
+    const prev = state;
+    state = next;
+    storage.save(state);
+    describeEvent(prev, next);
+    render();
+    scheduleCpu();
+  }
+
+  function scheduleCpu() {
+    if (cpuTimer) { clearTimeout(cpuTimer); cpuTimer = 0; }
+    if (state.phase !== 'playing' || isHumanTurn()) return;
+    cpuTimer = setTimeout(() => {
+      cpuTimer = 0;
+      if (state.phase !== 'playing' || isHumanTurn()) return;
+      const chosen = ai.chooseMove(state);
+      if (!chosen.move) return;
+      commit(rules.applyMove(chosen.state, chosen.move));
+    }, CONFIG.cpuDelayMs);
+  }
+
+  function humanDraw(index) {
+    if (!isHumanTurn()) return;
+    const moves = rules.legalMoves(state);
+    if (index < 0 || index >= moves.length) return;
+    selected = 0;
+    commit(rules.applyMove(state, moves[index]));
+  }
+
+  function newGame(seed) {
+    if (cpuTimer) { clearTimeout(cpuTimer); cpuTimer = 0; }
+    logLines.length = 0;
+    clear(el.log);
+    setNotice('');
+    selected = 0;
+    state = rules.createGame(seed, CONFIG);
+    storage.save(state);
+    addLog(content.messages.newGame(state.seed));
+    if (state.discards.length) addLog(`配布時に ${state.discards.length} 組のペアが捨てられました。`);
+    render();
+    scheduleCpu();
+  }
+
+  function renderCard(cardId, faceDown, mini) {
+    const b = document.createElement(faceDown && !mini ? 'button' : 'span');
+    b.className = 'card' + (faceDown ? ' back' : '') + (mini ? ' mini' : '');
+    if (mini) {
+      b.setAttribute('aria-hidden', 'true');
+    } else if (faceDown) {
+      b.type = 'button';
+      b.textContent = '?';
+    } else {
+      b.textContent = content.cardLabel(cardId);
+      if (cardId >= rules.JOKER_BASE) b.classList.add('joker');
+      else if (content.cardIsRed(cardId)) b.classList.add('red');
+    }
+    return b;
+  }
+
+  function render() {
+    el.seedView.textContent = String(state.seed);
+    el.seedCurrent.textContent = String(state.seed);
+    el.moveView.textContent = String(state.moveCount);
+    el.discardView.textContent = String(state.discards.length * 2);
+
+    const target = rules.targetOf(state);
+    const human = humanIndex();
+    clear(el.players);
+    state.players.forEach((p, i) => {
+      const sec = text('section', undefined, 'player');
+      if (!p.cpu) sec.classList.add('human');
+      if (state.phase === 'playing' && i === state.turn) sec.classList.add('current');
+      if (state.phase === 'playing' && i === target) sec.classList.add('target');
+      if (p.finishedRank !== null) sec.classList.add('finished');
+      const h = text('h2');
+      let title = p.name;
+      if (state.phase === 'playing' && i === state.turn) title += ' (手番)';
+      if (p.finishedRank !== null) title += ` — ${p.finishedRank}位` + (state.loser === i ? ' (負け)' : '');
+      h.appendChild(text('span', title));
+      h.appendChild(text('span', `${p.hand.length}枚`, 'count'));
+      sec.appendChild(h);
+      const hand = text('div', undefined, 'hand');
+      const selectable = isHumanTurn() && i === target;
+      if (!p.cpu || state.phase === 'finished') {
+        p.hand.forEach((c) => hand.appendChild(renderCard(c, false, false)));
+      } else if (selectable) {
+        if (selected >= p.hand.length) selected = Math.max(0, p.hand.length - 1);
+        p.hand.forEach((_, k) => {
+          const b = renderCard(0, true, false);
+          b.classList.add('selectable');
+          if (k === selected) b.classList.add('selected');
+          b.setAttribute('aria-label', `${p.name} の ${k + 1}枚目を引く`);
+          b.addEventListener('click', () => humanDraw(k));
+          b.addEventListener('focus', () => { selected = k; });
+          hand.appendChild(b);
+        });
+      } else {
+        p.hand.forEach(() => hand.appendChild(renderCard(0, true, true)));
+      }
+      sec.appendChild(hand);
+      el.players.appendChild(sec);
+    });
+
+    clear(el.result);
+    if (state.phase === 'finished') {
+      const box = text('div', undefined, 'result');
+      box.appendChild(text('h2', 'ゲーム終了'));
+      const ol = document.createElement('ol');
+      for (const r of rules.ranking(state)) {
+        ol.appendChild(text('li', r.name + (state.loser === r.index ? '(負け・ジョーカー)' : '')));
+      }
+      box.appendChild(ol);
+      const again = text('button', 'もう一度 (N)');
+      again.type = 'button';
+      again.addEventListener('click', () => newGame(randomSeed()));
+      box.appendChild(again);
+      el.result.appendChild(box);
+      const loserName = typeof state.loser === 'number' ? state.players[state.loser].name : '—';
+      setMessage(content.messages.gameOver(loserName));
+      again.focus();
+    } else if (isHumanTurn()) {
+      setMessage(content.messages.yourTurn(state.players[target].name));
+      focusSelected();
+    } else {
+      setMessage(content.messages.cpuTurn(state.players[state.turn].name));
+    }
+  }
+
+  function focusSelected() {
+    const btn = el.players.querySelectorAll('.card.selectable')[selected];
+    if (btn && !el.dialog.open && (document.activeElement === document.body || document.activeElement === null || document.activeElement.classList.contains('selectable'))) {
+      btn.focus();
+    }
+  }
+
+  function moveSelection(delta) {
+    const btns = el.players.querySelectorAll('.card.selectable');
+    if (!btns.length) return;
+    selected = (selected + delta + btns.length) % btns.length;
+    btns.forEach((b, k) => b.classList.toggle('selected', k === selected));
+    btns[selected].focus();
+  }
+
+  function openRules() {
+    el.seedInput.value = '';
+    el.dialog.showModal();
+  }
+
+  function onKey(e) {
+    if (el.dialog.open) {
+      if (CONFIG.keys.rules.includes(e.key) && e.target !== el.seedInput) { e.preventDefault(); el.dialog.close(); }
+      return;
+    }
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (CONFIG.keys.newGame.includes(e.key)) { e.preventDefault(); newGame(randomSeed()); return; }
+    if (CONFIG.keys.rules.includes(e.key)) { e.preventDefault(); openRules(); return; }
+    if (!isHumanTurn()) return;
+    if (CONFIG.keys.left.includes(e.key)) { e.preventDefault(); moveSelection(-1); return; }
+    if (CONFIG.keys.right.includes(e.key)) { e.preventDefault(); moveSelection(1); return; }
+    if (CONFIG.keys.draw.includes(e.key)) {
+      // ボタン以外にフォーカスがあるときのみ(ボタン上なら click が発火する)
+      if (!(e.target && e.target.tagName === 'BUTTON')) { e.preventDefault(); humanDraw(selected); }
+    }
+  }
+
+  function init() {
+    for (const line of content.rulesText) el.rulesList.appendChild(text('li', line));
+    for (const line of content.keysText) el.keysList.appendChild(text('li', line));
+    el.btnNew.addEventListener('click', () => newGame(randomSeed()));
+    el.btnRules.addEventListener('click', openRules);
+    el.btnClose.addEventListener('click', () => el.dialog.close());
+    el.seedForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = el.seedInput.value.trim();
+      const seed = v === '' ? randomSeed() : (Number(v) >>> 0);
+      if (v !== '' && !/^\d+$/.test(v)) { el.seedInput.setCustomValidity('数字のみ'); el.seedInput.reportValidity(); return; }
+      el.seedInput.setCustomValidity('');
+      el.dialog.close();
+      newGame(seed);
+    });
+    el.seedInput.addEventListener('input', () => el.seedInput.setCustomValidity(''));
+    document.addEventListener('keydown', onKey);
+
+    const loaded = storage.load();
+    if (loaded.state) {
+      state = loaded.state;
+      addLog(content.messages.restored);
+      render();
+      scheduleCpu();
+    } else {
+      newGame(randomSeed());
+      if (loaded.error === 'broken') { setNotice(content.messages.storageBroken); addLog(content.messages.storageBroken); }
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

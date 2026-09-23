@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<!--
+  ============================================================
+  ひな型: 五目並べ / gomoku
+  ============================================================
+  版:            0.1
+  最終更新日:    2026-09-23(SD-004/007/008/009の反映)
+  ライセンス:    MIT-0(shared-decisions.md SD-007で決定)
+  配置パス:      classic-games/gomoku.html(shared-decisions.md SD-004)
+
+  3軸チェック(shared-decisions.md SD-001):
+    ①メカニクス: 五目並べは数百年来の伝統的な盤上遊戯。特定企業が主張するメカニクスなし → 問題なし
+    ②名称・ブランド: 「五目並べ」は一般名称。競技名の「連珠」は使わない(禁手ルールも採用しない) → 問題なし
+    ③具体的な表現: 盤・石はCSS/DOMのみで独自描画。既存製品の意匠を模倣しない → 問題なし
+
+  採用ルール(運営者確認済み・変更禁止):
+    - 2人(人間=黒・先手、CPU=白)、15×15の碁盤、空盤から開始、交互に空点へ1石
+    - 縦・横・斜めいずれかに5個以上並べた側の勝ち(長連も勝ち=自由五目)。三三・四四の禁手なし
+    - パスなし。225点すべて埋まって勝者なしなら引き分け
+    - CPU方針: ①自分の五 ②相手の五を止める ③自分の活四 ④相手の活四・四三を止める
+      ⑤各空点を「自分の連の伸び+相手の連の妨害」でスコア化して最大(既存石の2マス以内に限定)。同点はシード乱数
+    - キーボード: 矢印=カーソル移動 / Enter・Space=着手 / R=新規ゲーム / ?=ルール表示切替
+
+  流用できる部品:
+    - rng   : シード付き疑似乱数(mulberry32系)、Fisher–Yatesシャッフル
+    - rules : 盤面の直線走査(連の長さ・両端の開き判定)、apply(state, action) の不変更新
+    - ai    : 「勝ち→阻止→形づくり→スコア評価」の優先順位型CPU、同点をシード乱数で決める方式
+    - storage: JSON検証つき localStorage 読み書き(壊れたデータは破棄して新規開始)
+    - ui    : 矢印キーでのロービングフォーカス(グリッド)、aria-live 通知
+
+  転用メモ(実装しない):
+    1. 仕組みの核: 「同種のものを一直線に5つ連続させる」陣取り。置いた場所が固定され、妨害と形づくりの読み合いになる
+    2. 転用アイディア:
+       - マスに問題を割り当て、正解したときだけ石を置ける(語彙・計算の早押し五目)
+       - 石の代わりに「同じ分類のカード」を並べる(同じ品詞・同じ元素族を5つ揃える)
+       - 盤の座標を年表(横=年代、縦=分野)にして、出来事を正しい位置に置けたら石になる
+    3. 差し替えるべき箇所: content.players(石の名前・記号)、rules.checkWin の連長(CONFIG.winLength)、
+       ui.renderCell(石の描画)。学習データの差し込み口は content と CONFIG に集約
+  ============================================================
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>五目並べ — わくてかスタディ研究所 ひな型</title>
+<style>
+  :root {
+    --ink: #14213D;
+    --ink-soft: #4A5578;
+    --paper: #FCFAF7;
+    --paper-warm: #F3ECDC;
+    --spark: #FFC145;
+    --coral: #FF6B57;
+    /* --coral(#FF6B57) は白背景で 2.9:1 と文字色には不足するため、文字には濃い別トークンを使う */
+    --coral-text: #B8321F;      /* 対 --paper 5.6:1 */
+    --coral-text-dark: #FF9A8B; /* 対 --ink 7.9:1 */
+    --bg: var(--paper);
+    --bg-alt: var(--paper-warm);
+    --fg: var(--ink);
+    --fg-soft: var(--ink-soft);
+    --board: #D9B573;
+    --board-line: #6B4F1D;
+    --accent-text: var(--coral-text);
+    --focus: #1a5fd0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: var(--ink);
+      --bg-alt: #1e2b4d;
+      --fg: var(--paper);
+      --fg-soft: #C9CFE0;
+      --board: #A88544;
+      --board-line: #3d2c0e;
+      --accent-text: var(--coral-text-dark);
+      --focus: var(--spark);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+    line-height: 1.5;
+  }
+  h1, h2 {
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif;
+    margin: 0;
+  }
+  .app { max-width: 32rem; margin: 0 auto; padding: 0.75rem; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+  h1 { font-size: 1.4rem; }
+  .sub { color: var(--fg-soft); font-size: 0.85rem; }
+
+  .status {
+    margin: 0.5rem 0;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-alt);
+    border-radius: 0.5rem;
+    min-height: 2.75rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;
+  }
+  .status strong { font-size: 1.05rem; }
+  .status .result { color: var(--accent-text); font-weight: bold; }
+  .meta { font-size: 0.8rem; color: var(--fg-soft); }
+
+  /* 盤: 15列を親幅いっぱいに均等割り。375px幅でもはみ出さないよう aspect-ratio で正方形にする */
+  .board-wrap { background: var(--board); padding: 2.5%; border-radius: 0.4rem; }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(var(--n), 1fr);
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    position: relative;
+  }
+  .cell {
+    position: relative;
+    appearance: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    touch-action: manipulation;
+  }
+  /* 交点の格子線を疑似要素で描く(画像なし) */
+  .cell::before, .cell::after { content: ""; position: absolute; background: var(--board-line); pointer-events: none; }
+  .cell::before { left: 0; right: 0; top: 50%; height: 1px; }
+  .cell::after  { top: 0; bottom: 0; left: 50%; width: 1px; }
+  .cell.edge-l::before { left: 50%; }
+  .cell.edge-r::before { right: 50%; }
+  .cell.edge-t::after  { top: 50%; }
+  .cell.edge-b::after  { bottom: 50%; }
+  .cell .star { position: absolute; left: 50%; top: 50%; width: 18%; height: 18%; transform: translate(-50%,-50%); background: var(--board-line); border-radius: 50%; }
+  .cell .stone {
+    position: absolute; left: 50%; top: 50%; width: 82%; height: 82%; transform: translate(-50%,-50%);
+    border-radius: 50%; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.55rem; line-height: 1; user-select: none;
+  }
+  .stone.p1 { background: #1a1a1a; color: #fff; box-shadow: inset -2px -2px 3px rgba(255,255,255,0.25); }
+  .stone.p2 { background: #f7f7f7; color: #222; box-shadow: inset -2px -2px 3px rgba(0,0,0,0.25); border: 1px solid #999; }
+  .cell.last .stone { outline: 3px solid var(--coral); outline-offset: -1px; }
+  .cell.win .stone { outline: 3px solid var(--spark); outline-offset: -1px; }
+  .cell:focus-visible { outline: 3px solid var(--focus); outline-offset: -2px; z-index: 2; }
+  .cell[aria-disabled="true"] { cursor: default; }
+
+  .controls { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.75rem 0; }
+  button.btn, .rules button {
+    font: inherit; font-size: 0.95rem;
+    padding: 0.6rem 1rem; min-height: 2.75rem;
+    border-radius: 0.5rem; border: 1px solid var(--fg-soft);
+    background: var(--bg-alt); color: var(--fg); cursor: pointer;
+  }
+  button.primary { background: var(--spark); color: var(--ink); border-color: var(--spark); font-weight: bold; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  .rules { margin-top: 0.75rem; padding: 0.75rem; background: var(--bg-alt); border-radius: 0.5rem; }
+  .rules h2 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+  .rules ul { padding-left: 1.2rem; margin: 0.25rem 0; }
+  .rules li { margin: 0.15rem 0; }
+  .seed-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 0.5rem; }
+  .seed-form input { font: inherit; padding: 0.5rem; min-height: 2.75rem; width: 10rem; border-radius: 0.4rem; border: 1px solid var(--fg-soft); background: var(--bg); color: var(--fg); }
+  .notice { color: var(--accent-text); font-size: 0.9rem; margin: 0.25rem 0; min-height: 1.2rem; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  kbd { font-family: inherit; border: 1px solid var(--fg-soft); border-radius: 0.25rem; padding: 0 0.3rem; font-size: 0.85em; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 id="title"></h1>
+    <span class="sub" id="subtitle"></span>
+  </header>
+
+  <div class="status" aria-live="polite" id="status">
+    <strong id="turn-text"></strong>
+    <span class="meta" id="move-text"></span>
+  </div>
+  <p class="notice" id="notice" aria-live="polite"></p>
+
+  <div class="board-wrap">
+    <div class="board" id="board" role="grid" aria-label=""></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn primary" id="btn-new" type="button"></button>
+    <button class="btn" id="btn-rules" type="button" aria-expanded="true" aria-controls="rules"></button>
+  </div>
+
+  <section class="rules" id="rules">
+    <h2 id="rules-title"></h2>
+    <ul id="rules-list"></ul>
+    <h2 id="keys-title" style="margin-top:0.5rem"></h2>
+    <ul id="keys-list"></ul>
+    <div class="seed-form">
+      <label for="seed-input" id="seed-label"></label>
+      <input id="seed-input" type="text" inputmode="numeric" autocomplete="off">
+      <button type="button" id="btn-seed"></button>
+    </div>
+    <p class="meta" id="seed-current"></p>
+  </section>
+</div>
+
+<script>
+'use strict';
+
+/* ============================================================
+ * CONFIG: 仮の値・未確定事項をここに集約する(独断で確定しない)
+ * ============================================================ */
+const CONFIG = Object.freeze({
+  slug: 'gomoku',
+  version: '0.1',
+  license: 'MIT-0',                      // shared-decisions.md SD-007
+  pathHint: 'classic-games/gomoku.html',  // shared-decisions.md SD-004
+  storageKey: 'wktks.game.gomoku',        // shared-decisions.md SD-008
+  boardSize: 15,                          // 運営者確認済み
+  winLength: 5,                           // 運営者確認済み(5個以上で勝ち)
+  cpuDelayMs: 450,                        // CPUの間(演出のための待ち時間。長すぎない程度)
+  maxHistory: 15 * 15,                    // 異常データでフリーズしないための上限
+});
+
+/* ============================================================
+ * rng: シード付き疑似乱数(DOM非依存)
+ *  - 状態に乱数の内部状態を持たせない方針のため、必要なときに seed と手数から都度生成する
+ * ============================================================ */
+const rng = (() => {
+  // mulberry32: 32bit状態の軽量PRNG。品質より小ささ・移植しやすさを優先
+  function create(seed) {
+    let a = (seed >>> 0) || 0x9E3779B9;
+    return {
+      next() {
+        a = (a + 0x6D2B79F5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      },
+      // 0以上n未満の整数
+      int(n) { return Math.floor(this.next() * n); },
+    };
+  }
+  // Fisher–Yates(配列を書き換えず新配列を返す)
+  function shuffle(arr, r) {
+    const out = arr.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = r.int(i + 1);
+      const tmp = out[i]; out[i] = out[j]; out[j] = tmp;
+    }
+    return out;
+  }
+  // 手番ごとに独立した乱数列を得る。seed と手数だけから決まるので再現可能
+  function forMove(seed, moveCount) {
+    return create((seed ^ Math.imul(moveCount + 1, 0x85EBCA6B)) >>> 0);
+  }
+  return { create, shuffle, forMove };
+})();
+
+/* ============================================================
+ * content: 表示名など差し替え可能なデータ(DOM非依存・素のデータ)
+ * ============================================================ */
+const content = {
+  players: {
+    1: { name: '黒', symbol: '●', role: 'あなた' },
+    2: { name: '白', symbol: '○', role: 'CPU' },
+  },
+  ui: {
+    title: '五目並べ',
+    subtitle: 'ひな型 v' + CONFIG.version,
+    boardLabel: '五目並べの盤',
+    yourTurn: 'あなたの番(黒 ●)',
+    cpuTurn: 'CPUが考えています(白 ○)…',
+    win: 'あなたの勝ち(黒 ● が5つ並びました)',
+    lose: 'CPUの勝ち(白 ○ が5つ並びました)',
+    draw: '引き分け(盤が埋まりました)',
+    moveCount: '手数: {n}',
+    newGame: '新しいゲーム',
+    showRules: 'ルールを隠す',
+    hideRules: 'ルールを表示',
+    rulesTitle: 'ルール',
+    rules: [
+      '2人対戦。あなたが黒(●)で先手、CPUが白(○)です。',
+      '15×15の盤に、交互に空いている交点へ石を1つ置きます。',
+      '縦・横・斜めのいずれかに自分の石を5つ以上並べた側の勝ちです(6つ以上でも勝ち)。',
+      '三三・四四などの禁手はありません。パスもありません。',
+      '盤がすべて埋まって勝者がいなければ引き分けです。',
+    ],
+    keysTitle: 'キーボード操作',
+    keys: [
+      '矢印キー: カーソル移動',
+      'Enter / Space: 着手',
+      'R: 新しいゲーム',
+      '?: ルール表示の切り替え',
+    ],
+    seedLabel: 'シードを指定して開始',
+    seedButton: 'このシードで開始',
+    seedCurrent: '現在のシード: {seed}(同じシードと同じ手順なら同じ展開になります)',
+    seedInvalid: 'シードは0以上の整数で入力してください。',
+    cellLabel: '{col}{row} {state}',
+    cellEmpty: '空',
+    cellStone: '{name}の石',
+    restored: '中断していたゲームを再開しました。',
+    corrupted: '保存データが壊れていたため破棄し、新しいゲームを始めました。',
+    storageUnavailable: '保存機能が使えないため、リロードすると進行は失われます。',
+  },
+  // 座標ラベル(列は英字、行は数字)
+  cols: 'ABCDEFGHIJKLMNO',
+};
+
+/* ============================================================
+ * rules: 初期状態・合法手・操作の適用・勝敗判定(DOM非依存・純粋関数)
+ *  状態は JSON にそのまま変換できる素のデータのみ
+ * ============================================================ */
+const rules = (() => {
+  const SIZE = CONFIG.boardSize;
+  const WIN = CONFIG.winLength;
+  const DIRS = [[1, 0], [0, 1], [1, 1], [1, -1]]; // 横・縦・斜め2方向(逆向きは走査時に両側へ伸ばす)
+
+  function idx(x, y) { return y * SIZE + x; }
+  function inBoard(x, y) { return x >= 0 && y >= 0 && x < SIZE && y < SIZE; }
+
+  function init(seed) {
+    return {
+      schemaVersion: 1,
+      seed: seed >>> 0,
+      size: SIZE,
+      board: new Array(SIZE * SIZE).fill(0), // 0=空, 1=黒, 2=白
+      turn: 1,                                // 黒が先手
+      history: [],                            // 着手した index の列
+      winner: 0,                              // 0=続行, 1/2=勝者, 3=引き分け
+      winLine: null,                          // 勝ちを構成した index の列
+    };
+  }
+
+  function isOver(state) { return state.winner !== 0; }
+
+  function legalMoves(state) {
+    if (isOver(state)) return [];
+    const out = [];
+    for (let i = 0; i < state.board.length; i++) if (state.board[i] === 0) out.push(i);
+    return out;
+  }
+
+  function isLegal(state, action) {
+    return !isOver(state) && action && action.type === 'place'
+      && Number.isInteger(action.index) && action.index >= 0 && action.index < state.board.length
+      && state.board[action.index] === 0;
+  }
+
+  // 指定点に置かれた石から、ある方向に何個連続しているかと両端の状態を返す
+  // ends: 開いている端の数(0〜2)。相手石または盤外なら閉じている
+  function lineInfo(board, index, player, dx, dy) {
+    const x0 = index % SIZE, y0 = Math.floor(index / SIZE);
+    let count = 1, ends = 0;
+    const cells = [index];
+    for (const sign of [1, -1]) {
+      let x = x0 + dx * sign, y = y0 + dy * sign;
+      while (inBoard(x, y) && board[idx(x, y)] === player) { cells.push(idx(x, y)); count++; x += dx * sign; y += dy * sign; }
+      if (inBoard(x, y) && board[idx(x, y)] === 0) ends++;
+    }
+    return { count, ends, cells };
+  }
+
+  // index に player の石があるとして、勝ちの列があればその index 配列を返す
+  function findWinLine(board, index, player) {
+    for (const [dx, dy] of DIRS) {
+      const info = lineInfo(board, index, player, dx, dy);
+      if (info.count >= WIN) return info.cells;
+    }
+    return null;
+  }
+
+  // 受け取った状態は書き換えず、新しい状態を返す
+  function apply(state, action) {
+    if (!isLegal(state, action)) return state;
+    const board = state.board.slice();
+    board[action.index] = state.turn;
+    const history = state.history.concat([action.index]);
+    const winLine = findWinLine(board, action.index, state.turn);
+    let winner = 0;
+    if (winLine) winner = state.turn;
+    else if (history.length >= board.length) winner = 3;
+    return {
+      schemaVersion: state.schemaVersion,
+      seed: state.seed,
+      size: state.size,
+      board,
+      turn: winner ? state.turn : (state.turn === 1 ? 2 : 1),
+      history,
+      winner,
+      winLine,
+    };
+  }
+
+  // 保存データの検証。素のデータで、値が範囲内であることを確かめる
+  function validate(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+    if (data.schemaVersion !== 1) return false;
+    if (!Number.isInteger(data.seed) || data.seed < 0) return false;
+    if (data.size !== SIZE) return false;
+    if (!Array.isArray(data.board) || data.board.length !== SIZE * SIZE) return false;
+    if (!data.board.every((v) => v === 0 || v === 1 || v === 2)) return false;
+    if (data.turn !== 1 && data.turn !== 2) return false;
+    if (!Array.isArray(data.history) || data.history.length > CONFIG.maxHistory) return false;
+    if (!data.history.every((v) => Number.isInteger(v) && v >= 0 && v < SIZE * SIZE)) return false;
+    if (![0, 1, 2, 3].includes(data.winner)) return false;
+    if (data.winLine !== null && !(Array.isArray(data.winLine) && data.winLine.every((v) => Number.isInteger(v)))) return false;
+    // 履歴から盤面を再構成できるか(改ざん・不整合の検出)
+    const rebuilt = data.history.reduce((s, i) => apply(s, { type: 'place', index: i }), init(data.seed));
+    if (rebuilt.turn !== data.turn || rebuilt.winner !== data.winner) return false;
+    for (let i = 0; i < rebuilt.board.length; i++) if (rebuilt.board[i] !== data.board[i]) return false;
+    return true;
+  }
+
+  return { SIZE, WIN, DIRS, init, apply, legalMoves, isLegal, isOver, lineInfo, findWinLine, validate, idx };
+})();
+
+/* ============================================================
+ * ai: CPUの着手選択(DOM非依存)。rules の判定を使い、ルールを再実装しない
+ *  優先順位: ①自分の五 ②相手の五を止める ③自分の活四 ④相手の活四・四三を止める ⑤スコア評価
+ *  同点はシード乱数で決める
+ * ============================================================ */
+const ai = (() => {
+  const SIZE = rules.SIZE, WIN = rules.WIN;
+
+  function opponent(p) { return p === 1 ? 2 : 1; }
+
+  // 既存の石から2マス以内の空点だけを候補にする(空盤なら中央)
+  function candidates(state) {
+    const legal = rules.legalMoves(state);
+    if (state.history.length === 0) return [rules.idx(Math.floor(SIZE / 2), Math.floor(SIZE / 2))];
+    const near = new Set();
+    for (const i of state.history) {
+      const x0 = i % SIZE, y0 = Math.floor(i / SIZE);
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const x = x0 + dx, y = y0 + dy;
+        if (x >= 0 && y >= 0 && x < SIZE && y < SIZE && state.board[rules.idx(x, y)] === 0) near.add(rules.idx(x, y));
+      }
+    }
+    const out = legal.filter((i) => near.has(i));
+    return out.length ? out : legal;
+  }
+
+  // 仮に player が index に置いたときの各方向の形を集める
+  function shapesIfPlaced(board, index, player) {
+    const b = board.slice(); b[index] = player;
+    return rules.DIRS.map(([dx, dy]) => rules.lineInfo(b, index, player, dx, dy));
+  }
+
+  function makesFive(board, index, player) {
+    const b = board.slice(); b[index] = player;
+    return rules.findWinLine(b, index, player) !== null;
+  }
+
+  // 活四: 4連で両端が開いている。四三: 4連(片端以上開き)と3連(両端開き)を同時に作る
+  function makesOpenFour(board, index, player) {
+    return shapesIfPlaced(board, index, player).some((s) => s.count === WIN - 1 && s.ends === 2);
+  }
+  function makesFourThree(board, index, player) {
+    const shapes = shapesIfPlaced(board, index, player);
+    const four = shapes.some((s) => s.count === WIN - 1 && s.ends >= 1);
+    const three = shapes.some((s) => s.count === WIN - 2 && s.ends === 2);
+    return four && three;
+  }
+
+  // 1方向の連を点数化。長く、開いているほど高い
+  function shapeScore(s) {
+    if (s.count >= WIN) return 100000;
+    if (s.ends === 0) return 0;
+    const base = [0, 1, 10, 100, 1000][Math.min(s.count, 4)];
+    return s.ends === 2 ? base * 3 : base;
+  }
+  function score(board, index, me) {
+    const mine = shapesIfPlaced(board, index, me).reduce((a, s) => a + shapeScore(s), 0);
+    const theirs = shapesIfPlaced(board, index, opponent(me)).reduce((a, s) => a + shapeScore(s), 0);
+    return mine + theirs * 0.9; // 妨害はやや低め。自分の形づくりを少し優先する
+  }
+
+  function pick(list, r) { return list[r.int(list.length)]; }
+
+  function choose(state) {
+    const me = state.turn, you = opponent(me);
+    const cands = candidates(state);
+    if (cands.length === 0) return null;
+    const r = rng.forMove(state.seed, state.history.length);
+
+    const tiers = [
+      (i) => makesFive(state.board, i, me),
+      (i) => makesFive(state.board, i, you),
+      (i) => makesOpenFour(state.board, i, me),
+      (i) => makesOpenFour(state.board, i, you) || makesFourThree(state.board, i, you),
+    ];
+    for (const test of tiers) {
+      const hits = cands.filter(test);
+      if (hits.length) return { type: 'place', index: pick(hits, r) };
+    }
+    let best = -1, bestList = [];
+    for (const i of cands) {
+      const s = score(state.board, i, me);
+      if (s > best) { best = s; bestList = [i]; }
+      else if (s === best) bestList.push(i);
+    }
+    return { type: 'place', index: pick(bestList, r) };
+  }
+
+  return { choose, candidates };
+})();
+
+/* ============================================================
+ * storage: localStorage の読み書きと検証(localStorage のみに依存)
+ * ============================================================ */
+const storage = (() => {
+  function available() {
+    try { return typeof localStorage !== 'undefined' && localStorage !== null; } catch (e) { return false; }
+  }
+  function save(state) {
+    if (!available()) return false;
+    try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(state)); return true; } catch (e) { return false; }
+  }
+  // 戻り値: { state, status } status は 'none' | 'ok' | 'corrupted' | 'unavailable'
+  function load() {
+    if (!available()) return { state: null, status: 'unavailable' };
+    let raw = null;
+    try { raw = localStorage.getItem(CONFIG.storageKey); } catch (e) { return { state: null, status: 'unavailable' }; }
+    if (raw === null) return { state: null, status: 'none' };
+    let data = null;
+    try { data = JSON.parse(raw); } catch (e) { return { state: null, status: 'corrupted' }; }
+    if (!rules.validate(data)) return { state: null, status: 'corrupted' };
+    return { state: data, status: 'ok' };
+  }
+  function clear() {
+    if (!available()) return;
+    try { localStorage.removeItem(CONFIG.storageKey); } catch (e) { /* 失敗しても続行 */ }
+  }
+  return { save, load, clear, available };
+})();
+
+/* ============================================================
+ * ui: 描画とイベント処理。状態は直接書き換えず rules.apply を通す
+ * ============================================================ */
+const ui = (() => {
+  const T = content.ui;
+  const $ = (id) => document.getElementById(id);
+  const SIZE = rules.SIZE;
+
+  let state = null;
+  let cursor = rules.idx(Math.floor(SIZE / 2), Math.floor(SIZE / 2));
+  let cpuTimer = null;
+  let cells = [];
+
+  function fmt(tpl, vars) { return tpl.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)); }
+
+  function newSeed() {
+    // ゲームロジック外(開始時のシード決定)なので Math.random で足りる。以後は rng に任せる
+    return (Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
+  }
+
+  function coordLabel(i) {
+    return content.cols[i % SIZE] + (Math.floor(i / SIZE) + 1);
+  }
+
+  function buildBoard() {
+    const board = $('board');
+    board.style.setProperty('--n', String(SIZE));
+    board.setAttribute('aria-label', T.boardLabel);
+    const stars = new Set([[3, 3], [11, 3], [7, 7], [3, 11], [11, 11]].map(([x, y]) => rules.idx(x, y)));
+    for (let y = 0; y < SIZE; y++) {
+      const row = document.createElement('div');
+      row.setAttribute('role', 'row');
+      row.style.display = 'contents';
+      for (let x = 0; x < SIZE; x++) {
+        const i = rules.idx(x, y);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cell';
+        btn.setAttribute('role', 'gridcell');
+        btn.dataset.index = String(i);
+        if (x === 0) btn.classList.add('edge-l');
+        if (x === SIZE - 1) btn.classList.add('edge-r');
+        if (y === 0) btn.classList.add('edge-t');
+        if (y === SIZE - 1) btn.classList.add('edge-b');
+        if (stars.has(i)) { const s = document.createElement('span'); s.className = 'star'; btn.appendChild(s); }
+        btn.addEventListener('click', () => { cursor = i; onPlace(i); });
+        btn.addEventListener('focus', () => { cursor = i; });
+        row.appendChild(btn);
+        cells[i] = btn;
+      }
+      board.appendChild(row);
+    }
+    board.addEventListener('keydown', onBoardKey);
+  }
+
+  function renderCell(i) {
+    const btn = cells[i];
+    const v = state.board[i];
+    const old = btn.querySelector('.stone');
+    if (old) old.remove();
+    if (v !== 0) {
+      const stone = document.createElement('span');
+      stone.className = 'stone p' + v;
+      stone.textContent = content.players[v].symbol;
+      stone.setAttribute('aria-hidden', 'true');
+      btn.appendChild(stone);
+    }
+    const stateText = v === 0 ? T.cellEmpty : fmt(T.cellStone, { name: content.players[v].name });
+    btn.setAttribute('aria-label', fmt(T.cellLabel, { col: content.cols[i % SIZE], row: Math.floor(i / SIZE) + 1, state: stateText }));
+    const last = state.history.length ? state.history[state.history.length - 1] : -1;
+    btn.classList.toggle('last', i === last);
+    btn.classList.toggle('win', !!(state.winLine && state.winLine.includes(i)));
+    // disabled にするとフォーカスが外れ矢印移動が途切れるため、押せない状態は aria-disabled で示し、onPlace 側で弾く
+    const humanTurn = !rules.isOver(state) && state.turn === 1;
+    btn.setAttribute('aria-disabled', String(!(humanTurn && v === 0)));
+    btn.tabIndex = i === cursor ? 0 : -1; // ロービングフォーカス: 盤全体で Tab 停止は1つ
+  }
+
+  function render() {
+    for (let i = 0; i < cells.length; i++) renderCell(i);
+    let turnText;
+    const turnEl = $('turn-text');
+    turnEl.classList.remove('result');
+    if (state.winner === 1) { turnText = T.win; turnEl.classList.add('result'); }
+    else if (state.winner === 2) { turnText = T.lose; turnEl.classList.add('result'); }
+    else if (state.winner === 3) { turnText = T.draw; turnEl.classList.add('result'); }
+    else turnText = state.turn === 1 ? T.yourTurn : T.cpuTurn;
+    turnEl.textContent = turnText;
+    $('move-text').textContent = fmt(T.moveCount, { n: state.history.length });
+    $('seed-current').textContent = fmt(T.seedCurrent, { seed: state.seed });
+  }
+
+  function setState(next) {
+    state = next;
+    storage.save(state);
+    render();
+  }
+
+  function onPlace(i) {
+    if (state.turn !== 1 || rules.isOver(state)) return;
+    const action = { type: 'place', index: i };
+    if (!rules.isLegal(state, action)) return;
+    setState(rules.apply(state, action));
+    scheduleCpu();
+  }
+
+  function scheduleCpu() {
+    if (cpuTimer) { clearTimeout(cpuTimer); cpuTimer = null; }
+    if (rules.isOver(state) || state.turn !== 2) return;
+    cpuTimer = setTimeout(() => {
+      cpuTimer = null;
+      const action = ai.choose(state);
+      if (action) setState(rules.apply(state, action));
+      // CPUの着手後、人間の操作位置(カーソル)へフォーカスを戻す
+      if (document.activeElement && document.activeElement.classList.contains('cell')) cells[cursor].focus();
+    }, CONFIG.cpuDelayMs);
+  }
+
+  function moveCursor(dx, dy) {
+    const x = Math.min(SIZE - 1, Math.max(0, (cursor % SIZE) + dx));
+    const y = Math.min(SIZE - 1, Math.max(0, Math.floor(cursor / SIZE) + dy));
+    const prev = cursor;
+    cursor = rules.idx(x, y);
+    // フォーカス可能かどうかに関わらずカーソル位置を Tab 停止にする
+    cells[prev].tabIndex = -1;
+    cells[cursor].tabIndex = 0;
+    cells[cursor].focus();
+  }
+
+  function onBoardKey(e) {
+    const map = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    if (map[e.key]) { e.preventDefault(); moveCursor(map[e.key][0], map[e.key][1]); return; }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onPlace(cursor);
+    }
+  }
+
+  function onGlobalKey(e) {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (e.key === 'r' || e.key === 'R') { e.preventDefault(); startNew(newSeed()); }
+    else if (e.key === '?') { e.preventDefault(); toggleRules(); }
+  }
+
+  function startNew(seed) {
+    if (cpuTimer) { clearTimeout(cpuTimer); cpuTimer = null; }
+    cursor = rules.idx(Math.floor(SIZE / 2), Math.floor(SIZE / 2));
+    setNotice('');
+    setState(rules.init(seed));
+    cells[cursor].focus();
+  }
+
+  function toggleRules() {
+    const sec = $('rules'), btn = $('btn-rules');
+    const open = sec.hidden;
+    sec.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    btn.textContent = open ? T.showRules : T.hideRules;
+  }
+
+  function setNotice(text) { $('notice').textContent = text; }
+
+  function onSeedSubmit() {
+    const raw = $('seed-input').value.trim();
+    if (!/^\d{1,10}$/.test(raw) || Number(raw) > 0xFFFFFFFF) { setNotice(T.seedInvalid); return; }
+    $('seed-input').value = '';
+    startNew(Number(raw));
+  }
+
+  function fillTexts() {
+    document.title = T.title + ' — わくてかスタディ研究所 ひな型';
+    $('title').textContent = T.title;
+    $('subtitle').textContent = T.subtitle;
+    $('btn-new').textContent = T.newGame;
+    $('btn-rules').textContent = T.showRules;
+    $('rules-title').textContent = T.rulesTitle;
+    $('keys-title').textContent = T.keysTitle;
+    for (const s of T.rules) { const li = document.createElement('li'); li.textContent = s; $('rules-list').appendChild(li); }
+    for (const s of T.keys) { const li = document.createElement('li'); li.textContent = s; $('keys-list').appendChild(li); }
+    $('seed-label').textContent = T.seedLabel;
+    $('btn-seed').textContent = T.seedButton;
+  }
+
+  function start() {
+    fillTexts();
+    buildBoard();
+    $('btn-new').addEventListener('click', () => startNew(newSeed()));
+    $('btn-rules').addEventListener('click', toggleRules);
+    $('btn-seed').addEventListener('click', onSeedSubmit);
+    $('seed-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onSeedSubmit(); } });
+    document.addEventListener('keydown', onGlobalKey);
+
+    const loaded = storage.load();
+    if (loaded.status === 'ok') {
+      state = loaded.state;
+      if (state.history.length) cursor = state.history[state.history.length - 1];
+      render();
+      if (state.history.length) setNotice(T.restored);
+      scheduleCpu(); // CPU手番で中断していた場合に続きを打たせる
+    } else {
+      state = rules.init(newSeed());
+      storage.clear();
+      storage.save(state);
+      render();
+      if (loaded.status === 'corrupted') setNotice(T.corrupted);
+      else if (loaded.status === 'unavailable') setNotice(T.storageUnavailable);
+    }
+  }
+
+  return { start };
+})();
+
+ui.start();
+</script>
+</body>
+</html>
