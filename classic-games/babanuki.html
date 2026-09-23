@@ -3,8 +3,8 @@
   わくてかスタディ研究所 ひな型: ババ抜き
   ============================================================
   ゲーム名      : ババ抜き / babanuki
-  版            : 0.1
-  最終更新日    : 2026-09-23(SD-004/007/008/009の反映)
+  版            : 0.2
+  最終更新日    : 2026-09-23(SD-004/007/008/009の反映。v0.2: 親のランダム化・引かれる手札のシャッフル、SD-013)
   ライセンス    : MIT-0(shared-decisions.md SD-007で決定)
   配置パス      : classic-games/babanuki.html(shared-decisions.md SD-004)
 
@@ -13,14 +13,17 @@
     ② 名称       : 「ババ抜き」は一般名称(特定企業の商標ではない) → 問題なし。英語スラッグは babanuki
     ③ 表現       : カードは Unicode のスート記号 + 数字のみの独自描画。既存製品のデザインを流用しない → 問題なし
 
-  [採用ルール] (運営者未確認。標準的なルールを採用したので要確認)
+  [採用ルール] (運営者確認済み・2026-09-23。shared-decisions.md SD-013)
     - 4人 (人間1 + CPU3)、52枚 + ジョーカー1枚
-    - 全カードを順に配り、初期手札の同ランクペアを捨てる
+    - 配り始めの人(親)を毎ゲームシード付き乱数で決め、親から順に全カードを配る(親が1枚多い14枚)。先手は親
+      (固定席から配ると1枚多い席の負け率が約26%になるため。20万回シミュレーションで確認)
+    - 初期手札の同ランクペアは自動で捨てる。同ランク3枚なら2枚捨てて1枚残す
     - 手番プレイヤーは次の(時計回りで手札が残る)プレイヤーの手札から裏向きに1枚引く
+    - 引かれる側の手札は、引く直前に毎回シード付き乱数でシャッフルする(並び順からジョーカーの位置が分からないように)
     - 引いた札と同ランクがあればペアで捨てる
     - 手札が0枚になった順に上がり。最後に1人残った人(ジョーカー保持者)が負け
     - 同時に上がった場合は「引いた側 → 引かれた側」の順で順位を付ける
-    - CPUは引く位置をシード付き乱数で決める (乱数状態は state.rng に保持)
+    - CPUは引く位置をシード付き乱数で決める (乱数状態は state.rng に保持。親の決定・手札のシャッフルも同じ乱数列)
     - CPUの強さ: 引く位置を一様乱数で選ぶ(引く側に情報がないゲームなので、強さの差は付けない)
 
   [流用できる部品]
@@ -179,7 +182,7 @@
    ============================================================ */
 const CONFIG = Object.freeze({
   gameId: 'babanuki',
-  schemaVersion: 1,
+  schemaVersion: 2,                    // v0.2で state に dealer を追加。旧保存データは破棄して新規開始
   storagePrefix: 'wktks.',             // shared-decisions.md SD-008
   storageKey: 'wktks.game.babanuki',   // = storagePrefix + 'game.' + gameId
   deployPath: '/classic-games/babanuki.html', // shared-decisions.md SD-004
@@ -252,6 +255,8 @@ const content = (() => {
   }
   const rulesText = [
     `${CONFIG.playerCount}人で遊びます(あなた + CPU ${CONFIG.playerCount - 1}人)。52枚 + ジョーカー${CONFIG.jokerCount}枚を全員に配ります。`,
+    '配り始めの人(親)は毎回ランダムに決まり、親から先に引きます。親は1枚多く配られます。',
+    '引かれる人の手札は、引く前に毎回よく混ぜられます。',
     '配られた手札のうち、同じ数字のペアは先に捨てられます。',
     '自分の手番では、次のプレイヤー(手札が残っている人)の裏向きの手札から1枚選んで引きます。',
     '引いた札と同じ数字の札を持っていれば、その2枚を捨てます。',
@@ -276,7 +281,7 @@ const content = (() => {
     gameOver: (loser) => `ゲーム終了。${loser} の負けです(ジョーカー保持)。`,
     storageBroken: '保存データが読めなかったため、新しいゲームを開始しました。',
     restored: '保存されていたゲームを再開しました。',
-    newGame: (seed) => `新しいゲームを開始しました(シード ${seed})。`,
+    newGame: (seed, dealer) => `新しいゲームを開始しました(シード ${seed})。親は ${dealer} です。`,
     youWon: (rank) => `あなたは ${rank}位で上がりました。残りはCPU同士で進みます。`,
   };
   return Object.freeze({ cardLabel, cardIsRed, rulesText, keysText, messages });
@@ -325,11 +330,15 @@ const rules = (() => {
     for (let j = 0; j < jokerCount; j++) deck.push(JOKER_BASE + j);
     const sh = rng.shuffle(deck, s);
     s = sh.state;
+    // 親(配り始め・先手)をシード付き乱数で決める。親は1枚多く配られる
+    const d = rng.nextInt(s, playerCount);
+    s = d.state;
+    const dealer = d.value;
     const players = [];
     for (let p = 0; p < playerCount; p++) {
       players.push({ name: names[p] || `P${p + 1}`, cpu: p !== 0, hand: [], finishedRank: null });
     }
-    sh.value.forEach((c, i) => { players[i % playerCount].hand.push(c); });
+    sh.value.forEach((c, i) => { players[(dealer + i) % playerCount].hand.push(c); });
     const discards = [];
     for (const pl of players) {
       const r = removePairsFromHand(pl.hand);
@@ -344,7 +353,8 @@ const rules = (() => {
       rng: s,
       players,
       discards,
-      turn: 0,
+      turn: dealer,
+      dealer,
       moveCount: 0,
       phase: 'playing',
       nextRank: 1,
@@ -353,7 +363,18 @@ const rules = (() => {
     assignFinishes(state, []);
     checkGameOver(state);
     if (state.phase === 'playing' && !isActive(state, state.turn)) state.turn = nextActive(state, state.turn);
+    shuffleTargetHand(state);
     return state;
+  }
+
+  // 引かれる側の手札を、引く直前にシード付き乱数でシャッフルする(state を直接更新)
+  // 並び順(整列済み)からジョーカーの位置が推測できないようにするため
+  function shuffleTargetHand(state) {
+    const t = targetOf(state);
+    if (t < 0) return;
+    const r = rng.shuffle(state.players[t].hand, state.rng);
+    state.players[t].hand = r.value;
+    state.rng = r.state;
   }
 
   function isActive(state, idx) { return state.players[idx].finishedRank === null; }
@@ -432,7 +453,10 @@ const rules = (() => {
     state.moveCount++;
     assignFinishes(state, [drawerIdx, targetIdx]);
     checkGameOver(state);
-    if (state.phase === 'playing') state.turn = nextActive(state, drawerIdx);
+    if (state.phase === 'playing') {
+      state.turn = nextActive(state, drawerIdx);
+      shuffleTargetHand(state);
+    }
     return state;
   }
 
@@ -631,7 +655,7 @@ const storage = (() => {
     selected = 0;
     state = rules.createGame(seed, CONFIG);
     storage.save(state);
-    addLog(content.messages.newGame(state.seed));
+    addLog(content.messages.newGame(state.seed, state.players[state.dealer] ? state.players[state.dealer].name : '-'));
     if (state.discards.length) addLog(`配布時に ${state.discards.length} 組のペアが捨てられました。`);
     render();
     scheduleCpu();
@@ -678,7 +702,7 @@ const storage = (() => {
       const hand = text('div', undefined, 'hand');
       const selectable = isHumanTurn() && i === target;
       if (!p.cpu || state.phase === 'finished') {
-        p.hand.forEach((c) => hand.appendChild(renderCard(c, false, false)));
+        p.hand.slice().sort((a, b) => a - b).forEach((c) => hand.appendChild(renderCard(c, false, false)));
       } else if (selectable) {
         if (selected >= p.hand.length) selected = Math.max(0, p.hand.length - 1);
         p.hand.forEach((_, k) => {
