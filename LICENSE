@@ -1,3 +1,24 @@
+Scope of License
+
+The paths below are relative to the root of this repository.
+
+The MIT No Attribution License set out below applies only to the
+following files:
+
+  1. All files in the "learning-games/" directory and its
+     subdirectories, excluding all files in the
+     "learning-games/packs/" directory and its subdirectories.
+
+  2. All files in the "classic-games/" directory and its
+     subdirectories.
+
+All other files in this repository, including but not limited to the
+top page ("index.html") and the quiz pack data in the
+"learning-games/packs/" directory, are not covered by the license
+below.
+
+------------------------------------------------------------------------
+
 MIT No Attribution
 
 Copyright 2026 wakutekastudy
