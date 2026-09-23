@@ -1,0 +1,13 @@
+# 改行コードをLFに統一する(PCごとの core.autocrlf 設定より優先される)
+* text=auto eol=lf
+
+# バイナリ(改行変換・差分表示の対象外)
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.pdf  binary
+*.woff  binary
+*.woff2 binary
