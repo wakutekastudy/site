@@ -5,7 +5,7 @@
   ============================================================
   ゲーム名        : 7並べ / sevens
   版              : 0.1
-  最終更新日      : 2026-09-23(SD-004/007/008の反映)
+  最終更新日      : 2026-09-26(配札・先手、失格後の隣接判定、ルール表示中のCPU停止を修正)
   ライセンス      : MIT-0(shared-decisions.md SD-007で決定)
   配置パス        : classic-games/sevens.html(shared-decisions.md SD-004)
 
@@ -16,9 +16,10 @@
 
   採用ルール(運営者確認済み)
     - 4人(人間1、CPU3)。ジョーカーなし、52枚
-    - 各スートの7を場に置き、残り48枚を12枚ずつ配る
-    - 先手は配札前に♦7を持っていた人。以後時計回り
-    - 出せる札は場の列に隣接する数字のみ(6→5→…→A、8→9→…→K)
+    - 52枚を13枚ずつ配り、各自が持っている7を場に出す(手札の枚数は7の枚数により異なる)
+    - 先手は♦7を持っていた人。以後時計回り
+    - 出せる札は、7から途切れずにつながった列の次の数字のみ(6→5→…→A、8→9→…→K)
+      失格者の札で先の位置が埋まっている場合は、列がそこまで届いたときに飛び越して次へ進む
     - トンネル(AとKの接続)なし
     - パスは出せる札があっても可。1人3回まで。4回目のパスで失格
     - 失格時はその人の手札を場の正しい位置にすべて置く
@@ -370,24 +371,23 @@ const rules = (() => {
     seed = seed | 0;
     const deck = [];
     for (let c = 0; c < SUITS * RANKS; c++) deck.push(c);
-    // 先手を「配札前に♦7を持っていた人」にするため、7を含めた52枚をまず配ってから7を場に移す
     const shuffled = rng.shuffle(deck, seed);
     const players = [];
     for (let p = 0; p < CONFIG.PLAYER_COUNT; p++) {
       players.push({ hand: [], passes: 0, status: "active" });
     }
-    let first;
     const board = [];
     for (let s = 0; s < SUITS; s++) {
       const row = [];
       for (let r = 0; r < RANKS; r++) row.push(false);
       board.push(row);
     }
-    // 52枚を配ったときの♦7の位置で先手を決め、そのあと7を抜いた48枚を12枚ずつ配る
-    first = shuffled.indexOf(cardOf(CONFIG.START_SUIT, CENTER)) % CONFIG.PLAYER_COUNT;
-    const rest = shuffled.filter((card) => rankOf(card) !== CENTER);
-    for (let s = 0; s < SUITS; s++) board[s][CENTER - 1] = true;
-    rest.forEach((card, i) => { players[i % CONFIG.PLAYER_COUNT].hand.push(card); });
+    // 52枚を13枚ずつ配り、各自が持っている7を場に出す。♦7を持っていた人が先手
+    const first = shuffled.indexOf(cardOf(CONFIG.START_SUIT, CENTER)) % CONFIG.PLAYER_COUNT;
+    shuffled.forEach((card, i) => {
+      if (rankOf(card) === CENTER) board[suitOf(card)][CENTER - 1] = true;
+      else players[i % CONFIG.PLAYER_COUNT].hand.push(card);
+    });
     players.forEach((pl) => pl.hand.sort((a, b) => a - b));
     return {
       schemaVersion: CONFIG.SCHEMA_VERSION,
@@ -403,15 +403,23 @@ const rules = (() => {
     };
   }
 
-  // 隣接判定:7より小さい札はひとつ上が、7より大きい札はひとつ下が場にあれば出せる。
+  // 7から dir 方向(-1 / +1)へ、置かれた札が途切れずに続く先の最初の空き位置を返す。
+  // 失格者の札で埋まった位置は、列がそこまで届けば飛び越される。
+  function frontier(row, dir) {
+    let r = CENTER + dir;
+    while (r >= 1 && r <= RANKS && row[r - 1]) r += dir;
+    return r;
+  }
+
+  // 隣接判定:7から途切れずにつながった列の、次の数字だけを出せる。
   // トンネル(AとK)はなし。差し替えるときはこの関数を変える。
   function canPlay(state, card) {
     const s = suitOf(card);
     const r = rankOf(card);
     const row = state.board[s];
     if (row[r - 1]) return false;
-    if (r < CENTER) return row[r] === true;        // r+1 が置かれているか
-    if (r > CENTER) return row[r - 2] === true;    // r-1 が置かれているか
+    if (r < CENTER) return r === frontier(row, -1);
+    if (r > CENTER) return r === frontier(row, 1);
     return false;
   }
 
@@ -680,9 +688,10 @@ const TEXT = {
   rulesTitle: "採用ルール",
   rulesList: [
     "4人(あなた1人、CPU3人)。ジョーカーなし、52枚。",
-    "各スートの7を場に置き、残り48枚を12枚ずつ配ります。",
-    "先手は配札前に♦7を持っていた人。以後、時計回り。",
-    "出せるのは場の列に隣接する数字だけ(6→5→…→A、8→9→…→K)。",
+    "52枚を13枚ずつ配り、持っている7を場に出します(手札の枚数は人によって変わります)。",
+    "先手は♦7を持っていた人。以後、時計回り。",
+    "出せるのは、7から途切れずにつながった列の次の数字だけ(6→5→…→A、8→9→…→K)。",
+    "失格者の札で先が埋まっている場合は、列がそこまで届くと飛び越して次の数字が出せます。",
     "AとKはつながりません(トンネルなし)。",
     "出せる札があってもパスできます。1人3回まで。4回目のパスで失格。",
     "失格した人の手札は、場の正しい位置にすべて置かれます。",
@@ -822,6 +831,10 @@ const TEXT = {
   }
 
   function renderHand() {
+    // 作り直す前に、手札や「出す」「パス」にフォーカスがあったかを覚えておく
+    // (ボタンを作り直したり無効にしたりするとフォーカスがページ全体に外れるため)
+    const active = document.activeElement;
+    const keepFocus = el.hand.contains(active) || active === el.btnPlay || active === el.btnPass;
     clearChildren(el.hand);
     const me = state.players[CONFIG.HUMAN];
     const myTurn = state.phase === "playing" && state.turn === CONFIG.HUMAN;
@@ -850,11 +863,14 @@ const TEXT = {
     el.handStatus.textContent = TEXT.handStatus(me.hand.length, me.passes);
     el.btnPlay.disabled = !myTurn;
     el.btnPass.disabled = !myTurn;
+    // CPUの手番で描き直されるたびに画面が手札へ飛ばないよう、スクロールはさせない
+    if (keepFocus) focusSelected({ preventScroll: true });
   }
 
-  function focusSelected() {
-    const btn = el.hand.querySelector('[data-index="' + selected + '"]');
-    if (btn) btn.focus();
+  // 選択中のカード(未選択なら先頭)にフォーカスを移す
+  function focusSelected(options) {
+    const btn = el.hand.querySelector('.card[tabindex="0"]');
+    if (btn) btn.focus(options);
   }
 
   function renderResult() {
@@ -903,8 +919,9 @@ const TEXT = {
     else announceTurn();
   }
 
+  // ルール画面を開いている間はCPUを進めない(閉じたときに toggleRules から再開する)
   function scheduleCpu() {
-    if (cpuTimer !== null) return;
+    if (cpuTimer !== null || !el.rules.hidden) return;
     cpuTimer = setTimeout(() => {
       cpuTimer = null;
       if (state.phase !== "playing" || !rules.isCpu(state.turn)) return;
@@ -968,8 +985,14 @@ const TEXT = {
   function toggleRules(show) {
     el.rules.hidden = !show;
     el.game.hidden = show;
-    if (show) { el.seedInput.value = String(state.seed); el.btnRulesClose.focus(); }
-    else el.btnRules.focus();
+    if (show) {
+      cancelCpu();
+      el.seedInput.value = String(state.seed);
+      el.btnRulesClose.focus();
+    } else {
+      el.btnRules.focus();
+      if (state.phase === "playing" && rules.isCpu(state.turn)) scheduleCpu();
+    }
   }
 
   function init() {
