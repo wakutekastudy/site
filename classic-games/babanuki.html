@@ -4,7 +4,7 @@
   ============================================================
   ゲーム名      : ババ抜き / babanuki
   版            : 0.2
-  最終更新日    : 2026-09-23(SD-004/007/008/009の反映。v0.2: 親のランダム化・引かれる手札のシャッフル、SD-013)
+  最終更新日    : 2026-09-23(SD-004/007/008/009の反映。v0.2: 親のランダム化・引かれる手札のシャッフル、SD-013) / 2026-09-27(暖色の配色、4本共通のボタン名・キー操作 N/R/Esc・ルール欄・ファビコン) / 2026-09-28(見出し・タイトル・ボタンの統一)
   ライセンス    : MIT-0(shared-decisions.md SD-007で決定)
   配置パス      : classic-games/babanuki.html(shared-decisions.md SD-004)
 
@@ -48,18 +48,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>ババ抜き | 定番ゲーム | わくてかスタディ研究所</title>
+<meta name="description" content="ババ抜きをブラウザで遊べます。となりの人の手札から1枚引いて、同じ数字がそろったら捨てます。最後にジョーカーを持っていた人の負けです。">
+<meta name="theme-color" content="#FFF8EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#24170F" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <style>
   /* handoff-brief.md 第5章のデザイントークン */
   :root {
-    --ink: #14213D;
-    --ink-soft: #4A5578;
-    --paper: #FCFAF7;
-    --paper-warm: #F3ECDC;
-    --spark: #FFC145;
-    --coral: #FF6B57;
-    /* --coral は --paper 上で 2.69:1 と文字色には不足するため、赤スート文字用に濃い別トークンを定義 (5.74:1) */
+    --ink: #3B2416;
+    --ink-soft: #6E5443;
+    --paper: #FFF8EE;
+    --paper-warm: #FFEBD2;
+    --spark: #E8792B; /* 強調の枠線・印(文字色には使わない) */
+    --coral: #1D6480; /* 引く相手の枠線(白い枠の上だけで使う。SD-015) */
+    /* 赤スートの文字色(白 5.98:1 / --paper 5.67:1) */
     --coral-text: #B8321F;
     --bg: var(--paper);
     --panel: #FFFFFF;
@@ -67,27 +72,30 @@
     --muted: var(--ink-soft);
     --accent: var(--ink);
     --accent-text: var(--paper);
-    --cta: var(--spark);
-    --cta-text: var(--ink);
+    --cta: #B85215;
+    --cta-text: #FFFFFF;
     --card-back: var(--ink);
-    --card-back-text: var(--spark);
-    --border: #D9D2C5;
-    --focus: #005FCC;
+    --card-back-text: #FFC98F;
+    --border: #F0DCC4;
+    --focus: var(--ink);
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: var(--ink);
-      --panel: #1B2A4A;
-      --text: #E6E1D6;
-      --muted: #B8B3A8;
-      --accent: var(--spark);
-      --accent-text: var(--ink);
-      --coral-text: #FF9C8C; /* 暗背景 #1B2A4A 上で 7.03:1 */
-      --card-back: #2F4B8A;
-      --card-back-text: var(--paper);
-      --border: #3A4A6E;
-      --focus: var(--spark);
+      --bg: #24170F;
+      --panel: #33231A;
+      --text: #FFF1E0;
+      --muted: #D9C3AE;
+      --accent: #F29A55;
+      --accent-text: #24170F;
+      --coral-text: #FF9C8C; /* 暗背景 #33231A 上で 7.44:1 */
+      --coral: #FFF1E0; /* 引く相手の枠線 */
+      --cta: #F29A55;
+      --cta-text: #24170F;
+      --card-back: #6E4A2E;
+      --card-back-text: #FFF1E0;
+      --border: #5A4232;
+      --focus: #F29A55;
       color-scheme: dark;
     }
   }
@@ -95,7 +103,7 @@
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
     font-size: 1rem; line-height: 1.5; }
-  body { max-width: 960px; margin: 0 auto; padding: .5rem; overflow-x: hidden; }
+  body { max-width: 960px; margin: 0 auto; padding: .5rem .75rem; overflow-x: hidden; } /* 左右の余白はほかの3本と同じ .75rem */
   header { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .5rem; }
   header h1 { font-size: 1.4rem; margin: 0; flex: 1 1 auto;
     font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; }
@@ -105,7 +113,7 @@
   button.secondary { background: var(--panel); color: var(--text); border-color: var(--border); }
   button:disabled { opacity: .5; cursor: default; }
   :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-  .notice { background: var(--paper-warm); color: var(--ink); border-left: 4px solid var(--coral); padding: .375rem .625rem; margin-bottom: .5rem; border-radius: 4px; }
+  .notice { background: var(--paper-warm); color: var(--ink); border-left: 4px solid var(--spark); padding: .375rem .625rem; margin-bottom: .5rem; border-radius: 4px; }
   .notice:empty { display: none; }
   .message { min-height: 2.5em; padding: 6px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; }
   .message[aria-live] { font-weight: 600; }
@@ -127,10 +135,11 @@
   .card.mini { width: .875rem; height: 1.25rem; border-radius: 3px; font-size: 0; }
   .human .hand .card { width: 2.75rem; height: 3.875rem; }
   .status { display: flex; flex-wrap: wrap; gap: .75rem; color: var(--muted); font-size: .9rem; margin-bottom: .5rem; }
-  dialog { border: 1px solid var(--border); border-radius: 12px; padding: 16px; max-width: min(92vw, 560px); color: var(--text); background: var(--panel); }
-  dialog::backdrop { background: rgba(0,0,0,.4); }
-  dialog h2 { margin-top: 0; }
-  dialog ul { padding-left: 1.2em; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: .75rem 1rem; margin-bottom: .5rem; }
+  .panel h2 { font-size: 1.1rem; margin: 0 0 .25rem; }
+  .panel h3 { font-size: 1rem; margin: .75rem 0 .25rem; }
+  .panel ul { padding-left: 1.2em; margin: .25rem 0; }
+  .panel p { margin: .25rem 0; }
   .seedrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
   .seedrow input { font: inherit; padding: 6px; border: 1px solid var(--border); border-radius: 6px; width: 10em; max-width: 100%; }
   .result { background: var(--paper-warm); color: var(--ink); border: 2px solid var(--spark); border-radius: 10px; padding: .625rem; margin-bottom: .5rem; }
@@ -139,41 +148,67 @@
   .log { font-size: .85rem; color: var(--muted); max-height: 7em; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
   .log p { margin: 0; }
   /* サイト内の戻り導線(公開プラットフォーム側で追加) */
-  .site-back { font-size: 0.85rem; padding: 0.5rem 0.75rem 0; }
+  /* 4本共通(SD-020 案①):ページ最上部の戻りリンク。位置・余白・区切り線をそろえる */
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin: 0 0 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+  body > .site-back { margin: -0.5rem 0 0.5rem; padding-left: 0; padding-right: 0; } /* body の上の余白を打ち消し、ほかの3本と同じ高さにする */
   .site-back a { color: inherit; text-underline-offset: 0.2em; }
   .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+  /* ===== 4本共通:見出し・タイトル・ボタン(SD-020。4本とも同じ内容。--gh-width だけゲームごとに変える) ===== */
+  :root {
+    --gh-width: 960px;           /* ゲーム本体の幅。戻りリンクと見出しをこの幅にそろえる */
+    --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
+    --gh-cta: #B85215; --gh-cta-fg: #FFFFFF;   /* 白文字 4.93:1 */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --gh-btn-bg: #33231A; --gh-btn-fg: #FFF1E0; --gh-btn-line: #6E5443; --gh-cta: #F29A55; --gh-cta-fg: #24170F; }
+  }
+  [hidden] { display: none !important; }
+  .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
+  .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
+  .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  button.gbtn { font: inherit; font-size: 1rem; line-height: 1.2; font-weight: 400; min-height: 2.75rem; padding: 0.5rem 1rem; border-radius: 0.5rem;
+    border: 1px solid var(--gh-btn-line); background: var(--gh-btn-bg); color: var(--gh-btn-fg); cursor: pointer; }
+  button.gbtn.gbtn-primary { background: var(--gh-cta); color: var(--gh-cta-fg); border-color: var(--gh-cta); font-weight: 700; }
+  @media (max-width: 480px) {
+    .game-head, .game-actions { gap: 0.4rem; }
+    .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
+  }
 </style>
 </head>
 <body>
-<nav class="site-back" style="padding:0.25rem 0 0" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
-<header>
+<nav class="site-back" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
+<header class="game-head">
   <h1>ババ抜き</h1>
-  <button id="btnRules" class="secondary" type="button">ルール / シード (R)</button>
-  <button id="btnNew" class="primary" type="button">新規ゲーム (N)</button>
+  <div class="game-actions">
+    <button id="btnRules" class="gbtn" type="button" aria-expanded="false" aria-controls="rulesPanel">ルール (R)</button>
+    <button id="btnNew" class="gbtn gbtn-primary" type="button">新しいゲーム (N)</button>
+  </div>
 </header>
+<section id="rulesPanel" class="panel" hidden aria-labelledby="rulesTitle">
+  <h2 id="rulesTitle">ルール</h2>
+  <ul id="rulesList"></ul>
+  <h3>キーボード操作</h3>
+  <ul id="keysList"></ul>
+  <h3>シード</h3>
+  <p>現在のシード: <span id="seedCurrent"></span></p>
+  <p>同じシードで同じ操作をすると、同じ展開になります。</p>
+  <form class="seedrow" id="seedForm">
+    <label for="seedInput">シード（整数）</label>
+    <input id="seedInput" name="seed" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+    <button type="submit" class="primary">このシードで新しいゲーム</button>
+  </form>
+</section>
 <div id="notice" class="notice" role="status"></div>
 <div id="message" class="message" aria-live="polite"></div>
 <div id="result"></div>
 <div id="players" class="players"></div>
 <div class="status">
-  <span>シード: <span id="seedView"></span></span>
-  <span>手番数: <span id="moveView"></span></span>
+  <span>手数: <span id="moveView"></span></span>
   <span>捨て札: <span id="discardView"></span>枚</span>
 </div>
 <div id="log" class="log" aria-label="ログ"></div>
 
-<dialog id="rulesDialog" aria-labelledby="rulesTitle">
-  <h2 id="rulesTitle">ルール</h2>
-  <ul id="rulesList"></ul>
-  <h3>キーボード操作</h3>
-  <ul id="keysList"></ul>
-  <form method="dialog" class="seedrow" id="seedForm">
-    <label for="seedInput">シード (現在: <span id="seedCurrent"></span>)</label>
-    <input id="seedInput" name="seed" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
-    <button type="submit" value="start" class="primary">このシードで新規開始</button>
-    <button type="button" id="btnCloseRules" class="secondary">閉じる</button>
-  </form>
-</dialog>
 
 <script>
 'use strict';
@@ -191,7 +226,7 @@ const CONFIG = Object.freeze({
   playerCount: 4,                     // 仮 (人間1 + CPU3)
   jokerCount: 1,                      // 仮
   cpuDelayMs: 700,                    // 仮 CPUの間
-  playerNames: ['あなた', 'CPU 1', 'CPU 2', 'CPU 3'], // 仮
+  playerNames: ['あなた', 'CPU1', 'CPU2', 'CPU3'], // 仮
   keys: {                             // 仮
     left: ['ArrowLeft', 'ArrowUp'],
     right: ['ArrowRight', 'ArrowDown'],
@@ -254,21 +289,22 @@ const content = (() => {
     return cardId < 52 && (suit === 1 || suit === 2);
   }
   const rulesText = [
-    `${CONFIG.playerCount}人で遊びます(あなた + CPU ${CONFIG.playerCount - 1}人)。52枚 + ジョーカー${CONFIG.jokerCount}枚を全員に配ります。`,
-    '配り始めの人(親)は毎回ランダムに決まり、親から先に引きます。親は1枚多く配られます。',
+    `${CONFIG.playerCount}人で遊びます（あなた＋CPU${CONFIG.playerCount - 1}人）。52枚＋ジョーカー${CONFIG.jokerCount}枚を全員に配ります。`,
+    '配り始めの人（親）は毎回ランダムに決まり、親から先に引きます。親は1枚多く配られます。',
     '引かれる人の手札は、引く前に毎回よく混ぜられます。',
     '配られた手札のうち、同じ数字のペアは先に捨てられます。',
-    '自分の手番では、次のプレイヤー(手札が残っている人)の裏向きの手札から1枚選んで引きます。',
+    '自分の手番では、次のプレイヤー（手札が残っている人）の裏向きの手札から1枚選んで引きます。',
     '引いた札と同じ数字の札を持っていれば、その2枚を捨てます。',
-    '手札が0枚になった人から順に上がりです。最後に1人残った人(ジョーカーを持っている人)が負けです。',
+    '手札が0枚になった人から順に上がりです。最後に1人残った人（ジョーカーを持っている人）が負けです。',
     '同時に上がった場合は、引いた側 → 引かれた側の順で順位が付きます。',
-    'CPUは引く位置を乱数で決めます。同じシードと同じ操作なら同じ展開になります。',
+    'CPUは引く位置を乱数で決めます。',
   ];
   const keysText = [
-    '← / → (↑ / ↓): 引く札を選ぶ',
+    '← / →（↑ / ↓）: 引く札を選ぶ',
     'Enter / Space: 選んだ札を引く',
-    'N: 新規ゲーム',
-    'R: このルール画面を開く / 閉じる',
+    'N: 新しいゲーム',
+    'R: ルールの表示/非表示',
+    'Esc: ルールを閉じる',
     'Tab: ボタン間の移動',
   ];
   const messages = {
@@ -278,10 +314,10 @@ const content = (() => {
     drewKeep: (drawer, target) => `${drawer} が ${target} から1枚引きました。`,
     drewKeepHuman: (label, target) => `あなたは ${target} から ${label} を引きました。`,
     finished: (name, rank) => `${name} が ${rank}位で上がりました。`,
-    gameOver: (loser) => `ゲーム終了。${loser} の負けです(ジョーカー保持)。`,
-    storageBroken: '保存データが読めなかったため、新しいゲームを開始しました。',
-    restored: '保存されていたゲームを再開しました。',
-    newGame: (seed, dealer) => `新しいゲームを開始しました(シード ${seed})。親は ${dealer} です。`,
+    gameOver: (loser) => `ゲーム終了。${loser} の負けです（ジョーカーを持っていました）。`,
+    storageBroken: '保存データを読み込めなかったため、新しいゲームを始めました。',
+    restored: '中断したゲームを再開しました。',
+    newGame: (seed, dealer) => `新しいゲームを始めました（シード ${seed}）。親は ${dealer} です。`,
     youWon: (rank) => `あなたは ${rank}位で上がりました。残りはCPU同士で進みます。`,
   };
   return Object.freeze({ cardLabel, cardIsRed, rulesText, keysText, messages });
@@ -554,10 +590,10 @@ const storage = (() => {
   const $ = (id) => document.getElementById(id);
   const el = {
     notice: $('notice'), message: $('message'), result: $('result'), players: $('players'),
-    seedView: $('seedView'), moveView: $('moveView'), discardView: $('discardView'), log: $('log'),
-    dialog: $('rulesDialog'), rulesList: $('rulesList'), keysList: $('keysList'),
+    moveView: $('moveView'), discardView: $('discardView'), log: $('log'),
+    rulesPanel: $('rulesPanel'), rulesList: $('rulesList'), keysList: $('keysList'),
     seedForm: $('seedForm'), seedInput: $('seedInput'), seedCurrent: $('seedCurrent'),
-    btnRules: $('btnRules'), btnNew: $('btnNew'), btnClose: $('btnCloseRules'),
+    btnRules: $('btnRules'), btnNew: $('btnNew'),
   };
 
   let state = null;
@@ -678,7 +714,6 @@ const storage = (() => {
   }
 
   function render() {
-    el.seedView.textContent = String(state.seed);
     el.seedCurrent.textContent = String(state.seed);
     el.moveView.textContent = String(state.moveCount);
     el.discardView.textContent = String(state.discards.length * 2);
@@ -694,8 +729,8 @@ const storage = (() => {
       if (p.finishedRank !== null) sec.classList.add('finished');
       const h = text('h2');
       let title = p.name;
-      if (state.phase === 'playing' && i === state.turn) title += ' (手番)';
-      if (p.finishedRank !== null) title += ` — ${p.finishedRank}位` + (state.loser === i ? ' (負け)' : '');
+      if (state.phase === 'playing' && i === state.turn) title += '（手番）';
+      if (p.finishedRank !== null) title += ` — ${p.finishedRank}位` + (state.loser === i ? '（負け）' : '');
       h.appendChild(text('span', title));
       h.appendChild(text('span', `${p.hand.length}枚`, 'count'));
       sec.appendChild(h);
@@ -727,10 +762,10 @@ const storage = (() => {
       box.appendChild(text('h2', 'ゲーム終了'));
       const ol = document.createElement('ol');
       for (const r of rules.ranking(state)) {
-        ol.appendChild(text('li', r.name + (state.loser === r.index ? '(負け・ジョーカー)' : '')));
+        ol.appendChild(text('li', r.name + (state.loser === r.index ? '（負け・ジョーカー）' : '')));
       }
       box.appendChild(ol);
-      const again = text('button', 'もう一度 (N)');
+      const again = text('button', '新しいゲーム (N)', 'gbtn gbtn-primary');
       again.type = 'button';
       again.addEventListener('click', () => newGame(randomSeed()));
       box.appendChild(again);
@@ -748,7 +783,7 @@ const storage = (() => {
 
   function focusSelected() {
     const btn = el.players.querySelectorAll('.card.selectable')[selected];
-    if (btn && !el.dialog.open && (document.activeElement === document.body || document.activeElement === null || document.activeElement.classList.contains('selectable'))) {
+    if (btn && el.rulesPanel.hidden && (document.activeElement === document.body || document.activeElement === null || document.activeElement.classList.contains('selectable'))) {
       btn.focus();
     }
   }
@@ -761,20 +796,20 @@ const storage = (() => {
     btns[selected].focus();
   }
 
-  function openRules() {
-    el.seedInput.value = '';
-    el.dialog.showModal();
+  // ルールは画面内で開閉する(最初は閉じている)。4本共通の操作: N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる
+  function toggleRules(force) {
+    const open = force === undefined ? el.rulesPanel.hidden : force;
+    el.rulesPanel.hidden = !open;
+    el.btnRules.setAttribute('aria-expanded', String(open));
+    if (open) el.seedInput.value = '';
   }
 
   function onKey(e) {
-    if (el.dialog.open) {
-      if (CONFIG.keys.rules.includes(e.key) && e.target !== el.seedInput) { e.preventDefault(); el.dialog.close(); }
-      return;
-    }
+    if (e.key === 'Escape' && !el.rulesPanel.hidden) { e.preventDefault(); toggleRules(false); el.btnRules.focus(); return; }
     const tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     if (CONFIG.keys.newGame.includes(e.key)) { e.preventDefault(); newGame(randomSeed()); return; }
-    if (CONFIG.keys.rules.includes(e.key)) { e.preventDefault(); openRules(); return; }
+    if (CONFIG.keys.rules.includes(e.key)) { e.preventDefault(); toggleRules(); return; }
     if (!isHumanTurn()) return;
     if (CONFIG.keys.left.includes(e.key)) { e.preventDefault(); moveSelection(-1); return; }
     if (CONFIG.keys.right.includes(e.key)) { e.preventDefault(); moveSelection(1); return; }
@@ -788,15 +823,14 @@ const storage = (() => {
     for (const line of content.rulesText) el.rulesList.appendChild(text('li', line));
     for (const line of content.keysText) el.keysList.appendChild(text('li', line));
     el.btnNew.addEventListener('click', () => newGame(randomSeed()));
-    el.btnRules.addEventListener('click', openRules);
-    el.btnClose.addEventListener('click', () => el.dialog.close());
+    el.btnRules.addEventListener('click', () => toggleRules());
     el.seedForm.addEventListener('submit', (e) => {
       e.preventDefault();
       const v = el.seedInput.value.trim();
       const seed = v === '' ? randomSeed() : (Number(v) >>> 0);
-      if (v !== '' && !/^\d+$/.test(v)) { el.seedInput.setCustomValidity('数字のみ'); el.seedInput.reportValidity(); return; }
+      if (v !== '' && !/^\d+$/.test(v)) { el.seedInput.setCustomValidity('シードには0以上の整数を入れてください。'); el.seedInput.reportValidity(); return; }
       el.seedInput.setCustomValidity('');
-      el.dialog.close();
+      toggleRules(false);
       newGame(seed);
     });
     el.seedInput.addEventListener('input', () => el.seedInput.setCustomValidity(''));

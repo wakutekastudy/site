@@ -5,7 +5,7 @@
   ============================================================
   ゲーム名      : リバーシ / reversi
   版            : 0.1
-  最終更新日    : 2026-09-23(SD-004/007/008の反映)
+  最終更新日    : 2026-09-23(SD-004/007/008の反映) / 2026-09-27(暖色の配色、4本共通のボタン名・キー操作 N/R/Esc・ルール欄・ファビコン) / 2026-09-28(見出し・タイトル・ボタンの統一)
   ライセンス    : MIT-0(shared-decisions.md SD-007で決定)
   配置パス      : classic-games/reversi.html(shared-decisions.md SD-004)
 
@@ -46,15 +46,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>リバーシ | 定番ゲーム | わくてかスタディ研究所</title>
+<meta name="description" content="リバーシをブラウザで遊べます。8×8の盤で、相手の石を自分の石ではさむと裏返せます。最後に石が多い方の勝ちです。">
+<meta name="theme-color" content="#FFF8EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#24170F" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <style>
   :root {
-    --ink: #14213D;
-    --ink-soft: #4A5578;
-    --paper: #FCFAF7;
-    --paper-warm: #F3ECDC;
-    --spark: #FFC145;
-    --coral: #FF6B57;
-    --coral-ink: #B8321F; /* SD-005: ライトの赤系文字用 */
+    --ink: #3B2416;
+    --ink-soft: #6E5443;
+    --paper: #FFF8EE;
+    --paper-warm: #FFEBD2;
+    --spark: #E8792B; /* 強調の枠線・印(文字色には使わない) */
+    --coral: #D64545; /* 直前の一手の印 */
+    --coral-ink: #B8321F; /* SD-005: ライトの赤系文字用(--paper 5.67:1) */
+    --focus: var(--ink);
+    --cta: #B85215;
+    --cta-text: #FFFFFF;
     --bg: var(--paper);
     --bg-alt: var(--paper-warm);
     --fg: var(--ink);
@@ -69,13 +77,17 @@
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: var(--ink);
-      --bg-alt: #1E2A4A;
-      --fg: var(--paper);
-      --fg-soft: #C9CFE0;
-      --alert: var(--coral); /* SD-005: ダークは --coral のまま */
-      --board: #2C3A5E;
-      --board-line: #55648C;
+      --bg: #24170F;
+      --bg-alt: #33231A;
+      --fg: #FFF1E0;
+      --fg-soft: #D9C3AE;
+      --alert: #FF9C8C; /* 暗背景 #24170F 上で 8.6:1 */
+      --focus: #F29A55;
+      --cta: #F29A55;
+      --cta-text: #24170F;
+      --board: #7A5A3E;
+      --board-line: #4A3526;
+      --ink-soft: #D9C3AE; /* 置ける場所の点線(盤 #7A5A3E 上で 3.6:1) */
     }
   }
   * { box-sizing: border-box; }
@@ -87,14 +99,14 @@
     color: var(--fg);
     line-height: 1.5;
   }
-  header, main, footer { max-width: 32rem; margin: 0 auto; padding: 0 0.75rem; }
+  header, main { max-width: 32rem; margin: 0 auto; padding: 0 0.75rem; }
   header { padding-top: 0.75rem; display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
   h1 { font-family: var(--font-head); font-size: 1.4rem; margin: 0; }
   h2 { font-family: var(--font-head); font-size: 1.1rem; margin: 1rem 0 0.4rem; }
   button {
     font: inherit;
-    color: var(--ink);
-    background: var(--spark);
+    color: var(--cta-text);
+    background: var(--cta);
     border: 0;
     border-radius: 0.5rem;
     padding: 0.6rem 0.9rem;
@@ -102,7 +114,7 @@
     cursor: pointer;
   }
   button.secondary { background: var(--bg-alt); color: var(--fg); border: 1px solid var(--board-line); }
-  button:focus-visible, .cell:focus-visible, input:focus-visible { outline: 3px solid var(--coral); outline-offset: 2px; }
+  button:focus-visible, .cell:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
   .status {
     display: flex; flex-wrap: wrap; gap: 0.5rem 1rem;
     align-items: center; justify-content: space-between;
@@ -110,6 +122,8 @@
     padding: 0.5rem 0.75rem; margin: 0.75rem 0;
   }
   .score { display: flex; gap: 1rem; font-size: 1.1rem; }
+  .score span { white-space: nowrap; }
+  @media (max-width: 360px) { .score { gap: 0.6rem; font-size: 1rem; } } /* 幅320pxでも石数を1行に収める */
   .score .active { text-decoration: underline; text-decoration-color: var(--spark); text-decoration-thickness: 3px; }
   .msg { min-height: 1.5rem; margin: 0.25rem 0 0.5rem; }
   .alert { color: var(--alert); }
@@ -172,25 +186,65 @@
     font-family: inherit; background: var(--bg); border: 1px solid var(--board-line);
     border-radius: 0.25rem; padding: 0 0.35rem;
   }
-  .seed-view { color: var(--fg-soft); font-size: 0.85rem; }
-  footer { color: var(--fg-soft); font-size: 0.85rem; padding-bottom: 1.5rem; }
+  .seed-view { color: var(--fg-soft); font-size: 0.9rem; margin: 0 0 0.4rem; }
+  main { padding-bottom: 1.5rem; }
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
   }
   /* サイト内の戻り導線(公開プラットフォーム側で追加) */
-  .site-back { font-size: 0.85rem; padding: 0.5rem 0.75rem 0; }
+  /* 4本共通(SD-020 案①):ページ最上部の戻りリンク。位置・余白・区切り線をそろえる */
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin: 0 0 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
   .site-back a { color: inherit; text-underline-offset: 0.2em; }
   .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+  /* ===== 4本共通:見出し・タイトル・ボタン(SD-020。4本とも同じ内容。--gh-width だけゲームごとに変える) ===== */
+  :root {
+    --gh-width: 32rem;           /* ゲーム本体の幅。戻りリンクと見出しをこの幅にそろえる */
+    --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
+    --gh-cta: #B85215; --gh-cta-fg: #FFFFFF;   /* 白文字 4.93:1 */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --gh-btn-bg: #33231A; --gh-btn-fg: #FFF1E0; --gh-btn-line: #6E5443; --gh-cta: #F29A55; --gh-cta-fg: #24170F; }
+  }
+  [hidden] { display: none !important; }
+  .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
+  .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
+  .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  button.gbtn { font: inherit; font-size: 1rem; line-height: 1.2; font-weight: 400; min-height: 2.75rem; padding: 0.5rem 1rem; border-radius: 0.5rem;
+    border: 1px solid var(--gh-btn-line); background: var(--gh-btn-bg); color: var(--gh-btn-fg); cursor: pointer; }
+  button.gbtn.gbtn-primary { background: var(--gh-cta); color: var(--gh-cta-fg); border-color: var(--gh-cta); font-weight: 700; }
+  @media (max-width: 480px) {
+    .game-head, .game-actions { gap: 0.4rem; }
+    .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
+  }
+  .site-back.gh-col { padding-left: 0; padding-right: 0; }
 </style>
 </head>
 <body>
-<nav class="site-back" style="max-width:32rem;margin:0 auto" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
-<header>
+<nav class="site-back gh-col" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
+<header class="game-head gh-col">
   <h1 id="title"></h1>
-  <span id="seedView" class="seed-view"></span>
+  <div class="game-actions">
+    <button id="btnRules" type="button" class="gbtn" aria-expanded="false" aria-controls="rulesPanel">ルール (R)</button>
+    <button id="btnNew" type="button" class="gbtn gbtn-primary">新しいゲーム (N)</button>
+  </div>
 </header>
 <main>
+  <section id="rulesPanel" class="panel" hidden>
+    <h2 id="rulesTitle"></h2>
+    <ul id="rulesList"></ul>
+    <h2 id="keysTitle"></h2>
+    <dl id="keysList"></dl>
+    <h2 id="seedTitle"></h2>
+    <p id="seedView" class="seed-view"></p>
+    <p id="seedNote"></p>
+    <div class="seed-row">
+      <label for="seedInput" id="seedLabel"></label>
+      <input id="seedInput" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+      <button id="btnSeedStart" type="button" class="secondary"></button>
+    </div>
+  </section>
   <div class="status">
     <div class="score" aria-label="石数">
       <span id="scoreBlack"></span>
@@ -200,25 +254,11 @@
   </div>
   <p id="msg" class="msg" aria-live="polite"></p>
   <div id="board" class="board" role="grid" aria-label="盤面"></div>
-  <div class="controls">
-    <button id="btnNew" type="button">新しいゲーム (N)</button>
-    <button id="btnRules" type="button" class="secondary" aria-expanded="false" aria-controls="rulesPanel">ルール (R)</button>
+  <!-- 対局後の「新しいゲーム」(スマホで上に戻らずに始められるように。SD-020) -->
+  <div class="controls" id="gameOver" hidden>
+    <button id="btnNew2" type="button" class="gbtn gbtn-primary">新しいゲーム (N)</button>
   </div>
-  <section id="rulesPanel" class="panel" hidden>
-    <h2 id="rulesTitle"></h2>
-    <ul id="rulesList"></ul>
-    <h2 id="keysTitle"></h2>
-    <dl id="keysList"></dl>
-    <h2 id="seedTitle"></h2>
-    <p id="seedNote"></p>
-    <div class="seed-row">
-      <label for="seedInput" id="seedLabel"></label>
-      <input id="seedInput" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
-      <button id="btnSeedStart" type="button" class="secondary"></button>
-    </div>
-  </section>
 </main>
-<footer><span id="footNote"></span></footer>
 
 <!--
   core: rules / ai / rng / content / CONFIG / TEXT
@@ -246,29 +286,30 @@ const TEXT = {
   white: "白",
   you: "あなた",
   cpu: "CPU",
-  turnHuman: "あなたの手番(黒)",
-  turnCpu: "CPUの手番(白)…",
-  msgStart: "黒(あなた)の先手です。点線のマスに置けます。",
-  msgHumanMoved: (label, n) => `あなた: ${label} に置き、${n}枚を反転しました。`,
-  msgCpuMoved: (label, n) => `CPU: ${label} に置き、${n}枚を反転しました。`,
+  turnHuman: "あなたの手番（黒）",
+  turnCpu: "CPUの手番（白）…",
+  msgStart: "黒（あなた）の先手です。点線のマスに置けます。",
+  msgHumanMoved: (label, n) => `あなた: ${label} に置き、${n}枚を裏返しました。`,
+  msgCpuMoved: (label, n) => `CPU: ${label} に置き、${n}枚を裏返しました。`,
   msgHumanPass: "あなたは置ける場所がないためパスしました。",
   msgCpuPass: "CPUは置ける場所がないためパスしました。",
   msgWinHuman: (b, w) => `終了。黒 ${b} 対 白 ${w} で、あなたの勝ちです。`,
   msgWinCpu: (b, w) => `終了。黒 ${b} 対 白 ${w} で、CPUの勝ちです。`,
   msgDraw: (b, w) => `終了。黒 ${b} 対 白 ${w} で、引き分けです。`,
-  msgCorrupted: "保存データが壊れていたため破棄し、新しいゲームを始めました。",
+  msgCorrupted: "保存データを読み込めなかったため、新しいゲームを始めました。",
+  msgSeedInvalid: "シードには0以上の整数を入れてください。",
   msgResumed: "中断したゲームを再開しました。",
   msgIllegal: "そこには置けません。",
-  msgNewGame: (seed) => `新しいゲームを始めました(シード ${seed})。`,
-  seedView: (seed) => `シード: ${seed}`,
-  rulesTitle: "ルール(採用ルール)",
+  msgNewGame: (seed) => `新しいゲームを始めました（シード ${seed}）。`,
+  seedView: (seed) => `現在のシード: ${seed}`,
+  rulesTitle: "ルール",
   rules: [
-    "8×8の盤で、黒(あなた・先手)と白(CPU)が交互に石を置きます。",
+    "8×8の盤で、黒（あなた・先手）と白（CPU）が交互に石を置きます。",
     "相手の石を自分の石で挟める場所にだけ置けます。挟んだ石はすべて自分の色になります。",
     "置ける場所がないときは自動でパスになります。",
-    "盤が埋まるか、両者とも置けなくなったら終了。石の多い方が勝ち、同数は引き分け(空マスは数えません)。",
+    "盤が埋まるか、両者とも置けなくなったら終了。石の多い方が勝ち、同数は引き分け（空マスは数えません）。",
     "ハンデ・先手選択・持ち時間はありません。",
-    "CPUは「角を取る > X・C打ちを避ける > 反転が少ない手(終盤は多い手)」の順で選び、同点はシード付き乱数で決めます。"
+    "CPUは「角を取る > 角のとなりのマス（X・C打ち）を避ける > 裏返す石が少ない手（終盤は多い手）」の順で選び、同点はシード付き乱数で決めます。"
   ],
   keysTitle: "キーボード操作",
   keys: [
@@ -279,10 +320,9 @@ const TEXT = {
     ["Esc", "ルールを閉じる"]
   ],
   seedTitle: "シード",
-  seedNote: "シードはCPUの同点判定に使われます。同じシードで同じ手順を打つと同じ展開になります。",
-  seedLabel: "シード(整数)",
-  seedStart: "このシードで新規開始",
-  footNote: (v, lic) => `ひな型 リバーシ v${v} / ライセンス: ${lic} / 保存先: このブラウザの localStorage のみ`
+  seedNote: "同じシードで同じ操作をすると、同じ展開になります。",
+  seedLabel: "シード（整数）",
+  seedStart: "このシードで新しいゲーム"
 };
 
 /* ---------- content: 表示名など差し替え可能なデータ ---------- */
@@ -570,15 +610,15 @@ const ui = {
       turnView: q("turnView"), msg: q("msg"), board: q("board"), btnNew: q("btnNew"), btnRules: q("btnRules"),
       rulesPanel: q("rulesPanel"), rulesTitle: q("rulesTitle"), rulesList: q("rulesList"),
       keysTitle: q("keysTitle"), keysList: q("keysList"), seedTitle: q("seedTitle"), seedNote: q("seedNote"),
-      seedLabel: q("seedLabel"), seedInput: q("seedInput"), btnSeedStart: q("btnSeedStart"), footNote: q("footNote")
+      seedLabel: q("seedLabel"), seedInput: q("seedInput"), btnSeedStart: q("btnSeedStart")
     };
     ui.el.title.textContent = TEXT.title;
     document.title = TEXT.title + ' | 定番ゲーム | わくてかスタディ研究所';
-    ui.el.footNote.textContent = TEXT.footNote(CONFIG.version, CONFIG.license);
     ui.buildBoard();
     ui.buildRules();
 
     ui.el.btnNew.addEventListener("click", () => ui.newGame(ui.freshSeed()));
+    document.getElementById("btnNew2").addEventListener("click", () => ui.newGame(ui.freshSeed()));
     ui.el.btnRules.addEventListener("click", () => ui.toggleRules());
     ui.el.btnSeedStart.addEventListener("click", () => ui.startWithSeedInput());
     ui.el.seedInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); ui.startWithSeedInput(); } });
@@ -647,7 +687,7 @@ const ui = {
 
   startWithSeedInput() {
     const v = ui.el.seedInput.value.trim();
-    if (!/^\d{1,10}$/.test(v)) { ui.el.seedInput.focus(); return; }
+    if (!/^\d{1,10}$/.test(v)) { ui.el.msg.textContent = TEXT.msgSeedInvalid; ui.el.seedInput.focus(); return; }
     ui.newGame(Number(v) % 4294967296);
   },
 
@@ -720,6 +760,7 @@ const ui = {
 
   render(message) {
     const s = ui.state;
+    document.getElementById("gameOver").hidden = !s.finished;
     const c = rules.count(s.board);
     const legal = s.finished || s.turn !== rules.BLACK ? new Map() : new Map(rules.legalMoves(s, rules.BLACK).map(m => [m.idx, m.flips.length]));
     for (let i = 0; i < 64; i++) {
@@ -737,7 +778,7 @@ const ui = {
       } else if (legal.has(i)) {
         const h = document.createElement("span"); h.className = "hint"; b.appendChild(h);
         const f = document.createElement("span"); f.className = "flipmark"; f.textContent = String(legal.get(i)); b.appendChild(f);
-        label += "置ける(" + legal.get(i) + "枚)";
+        label += "置ける（" + legal.get(i) + "枚）";
         b.removeAttribute("aria-disabled");
       } else {
         label += "空";
@@ -745,8 +786,8 @@ const ui = {
       }
       b.setAttribute("aria-label", label);
     }
-    ui.el.scoreBlack.textContent = content.players[1].mark + " " + TEXT.black + "(" + TEXT.you + ") " + c.black;
-    ui.el.scoreWhite.textContent = content.players[2].mark + " " + TEXT.white + "(" + TEXT.cpu + ") " + c.white;
+    ui.el.scoreBlack.textContent = content.players[1].mark + " " + TEXT.black + "（" + TEXT.you + "） " + c.black;
+    ui.el.scoreWhite.textContent = content.players[2].mark + " " + TEXT.white + "（" + TEXT.cpu + "） " + c.white;
     ui.el.scoreBlack.classList.toggle("active", !s.finished && s.turn === 1);
     ui.el.scoreWhite.classList.toggle("active", !s.finished && s.turn === 2);
     ui.el.turnView.textContent = s.finished ? "" : (s.turn === 1 ? TEXT.turnHuman : TEXT.turnCpu);

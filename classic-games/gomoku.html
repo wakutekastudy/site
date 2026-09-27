@@ -4,7 +4,7 @@
   ひな型: 五目並べ / gomoku
   ============================================================
   版:            0.1
-  最終更新日:    2026-09-23(SD-004/007/008/009の反映)
+  最終更新日:    2026-09-23(SD-004/007/008/009の反映) / 2026-09-27(暖色の配色、4本共通のボタン名・キー操作 N/R/Esc・ルール欄・ファビコン) / 2026-09-28(見出し・タイトル・ボタンの統一)
   ライセンス:    MIT-0(shared-decisions.md SD-007で決定)
   配置パス:      classic-games/gomoku.html(shared-decisions.md SD-004)
 
@@ -19,7 +19,7 @@
     - パスなし。225点すべて埋まって勝者なしなら引き分け
     - CPU方針: ①自分の五 ②相手の五を止める ③自分の活四 ④相手の活四・四三を止める
       ⑤各空点を「自分の連の伸び+相手の連の妨害」でスコア化して最大(既存石の2マス以内に限定)。同点はシード乱数
-    - キーボード: 矢印=カーソル移動 / Enter・Space=着手 / R=新規ゲーム / ?=ルール表示切替
+    - キーボード: 矢印=カーソル移動 / Enter・Space=着手 / N=新しいゲーム / R=ルール表示切替 / Esc=ルールを閉じる
 
   流用できる部品:
     - rng   : シード付き疑似乱数(mulberry32系)、Fisher–Yatesシャッフル
@@ -44,17 +44,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>五目並べ | 定番ゲーム | わくてかスタディ研究所</title>
+<meta name="description" content="五目並べをブラウザで遊べます。15×15の盤に交互に石を置き、たて・よこ・ななめのどれかに5つ並べたら勝ちです。">
+<meta name="theme-color" content="#FFF8EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#24170F" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <style>
   :root {
-    --ink: #14213D;
-    --ink-soft: #4A5578;
-    --paper: #FCFAF7;
-    --paper-warm: #F3ECDC;
-    --spark: #FFC145;
-    --coral: #FF6B57;
-    /* --coral(#FF6B57) は白背景で 2.9:1 と文字色には不足するため、文字には濃い別トークンを使う */
-    --coral-text: #B8321F;      /* 対 --paper 5.6:1 */
-    --coral-text-dark: #FF9A8B; /* 対 --ink 7.9:1 */
+    --ink: #3B2416;
+    --ink-soft: #6E5443;
+    --paper: #FFF8EE;
+    --paper-warm: #FFEBD2;
+    --spark: #E8792B; /* 強調の枠線・印(文字色には使わない) */
+    --coral: #D64545; /* 直前の一手の印(黒石 3.98:1 / 白石 4.09:1) */
+        --coral-text: #B8321F;      /* 対 --paper 5.67:1 */
+    --coral-text-dark: #FF9C8C; /* 対 #24170F 8.6:1 */
     --bg: var(--paper);
     --bg-alt: var(--paper-warm);
     --fg: var(--ink);
@@ -62,18 +66,22 @@
     --board: #D9B573;
     --board-line: #6B4F1D;
     --accent-text: var(--coral-text);
-    --focus: #1a5fd0;
+    --focus: var(--ink);
+    --cta: #B85215;
+    --cta-text: #FFFFFF;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: var(--ink);
-      --bg-alt: #1e2b4d;
-      --fg: var(--paper);
-      --fg-soft: #C9CFE0;
+      --bg: #24170F;
+      --bg-alt: #33231A;
+      --fg: #FFF1E0;
+      --fg-soft: #D9C3AE;
       --board: #A88544;
       --board-line: #3d2c0e;
       --accent-text: var(--coral-text-dark);
-      --focus: var(--spark);
+      --focus: #F29A55;
+      --cta: #F29A55;
+      --cta-text: #24170F;
     }
   }
   * { box-sizing: border-box; }
@@ -89,7 +97,7 @@
     font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif;
     margin: 0;
   }
-  .app { max-width: 32rem; margin: 0 auto; padding: 0.75rem; }
+  .app { max-width: 32rem; margin: 0 auto; padding: 0 0.75rem 0.75rem; }
   header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
   h1 { font-size: 1.4rem; }
   .sub { color: var(--fg-soft); font-size: 0.85rem; }
@@ -156,7 +164,7 @@
     border-radius: 0.5rem; border: 1px solid var(--fg-soft);
     background: var(--bg-alt); color: var(--fg); cursor: pointer;
   }
-  button.primary { background: var(--spark); color: var(--ink); border-color: var(--spark); font-weight: bold; }
+  button.primary { background: var(--cta); color: var(--cta-text); border-color: var(--cta); font-weight: bold; }
   button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
   .rules { margin-top: 0.75rem; padding: 0.75rem; background: var(--bg-alt); border-radius: 0.5rem; }
@@ -169,18 +177,59 @@
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   kbd { font-family: inherit; border: 1px solid var(--fg-soft); border-radius: 0.25rem; padding: 0 0.3rem; font-size: 0.85em; }
   /* サイト内の戻り導線(公開プラットフォーム側で追加) */
-  .site-back { font-size: 0.85rem; padding: 0.5rem 0.75rem 0; }
+  /* 4本共通(SD-020 案①):ページ最上部の戻りリンク。位置・余白・区切り線をそろえる */
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin: 0 0 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
   .site-back a { color: inherit; text-underline-offset: 0.2em; }
   .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+  /* ===== 4本共通:見出し・タイトル・ボタン(SD-020。4本とも同じ内容。--gh-width だけゲームごとに変える) ===== */
+  :root {
+    --gh-width: 32rem;           /* ゲーム本体の幅。戻りリンクと見出しをこの幅にそろえる */
+    --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
+    --gh-cta: #B85215; --gh-cta-fg: #FFFFFF;   /* 白文字 4.93:1 */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --gh-btn-bg: #33231A; --gh-btn-fg: #FFF1E0; --gh-btn-line: #6E5443; --gh-cta: #F29A55; --gh-cta-fg: #24170F; }
+  }
+  [hidden] { display: none !important; }
+  .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
+  .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
+  .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  button.gbtn { font: inherit; font-size: 1rem; line-height: 1.2; font-weight: 400; min-height: 2.75rem; padding: 0.5rem 1rem; border-radius: 0.5rem;
+    border: 1px solid var(--gh-btn-line); background: var(--gh-btn-bg); color: var(--gh-btn-fg); cursor: pointer; }
+  button.gbtn.gbtn-primary { background: var(--gh-cta); color: var(--gh-cta-fg); border-color: var(--gh-cta); font-weight: 700; }
+  @media (max-width: 480px) {
+    .game-head, .game-actions { gap: 0.4rem; }
+    .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
+  }
+  .site-back.gh-col { padding-left: 0; padding-right: 0; }
 </style>
 </head>
 <body>
+<nav class="site-back gh-col" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
 <div class="app">
-<nav class="site-back" style="padding:0 0 0.5rem" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
-  <header>
+  <header class="game-head">
     <h1 id="title"></h1>
-    <span class="sub" id="subtitle"></span>
+    <div class="game-actions">
+      <button class="gbtn" id="btn-rules" type="button" aria-expanded="false" aria-controls="rules"></button>
+      <button class="gbtn gbtn-primary" id="btn-new" type="button"></button>
+    </div>
   </header>
+
+  <section class="rules" id="rules" hidden>
+    <h2 id="rules-title"></h2>
+    <ul id="rules-list"></ul>
+    <h2 id="keys-title" style="margin-top:0.5rem"></h2>
+    <ul id="keys-list"></ul>
+    <h2 style="margin-top:0.5rem">シード</h2>
+    <p class="meta" id="seed-current"></p>
+    <p class="meta">同じシードで同じ操作をすると、同じ展開になります。</p>
+    <div class="seed-form">
+      <label for="seed-input" id="seed-label"></label>
+      <input id="seed-input" type="text" inputmode="numeric" autocomplete="off">
+      <button type="button" id="btn-seed"></button>
+    </div>
+  </section>
 
   <div class="status" aria-live="polite" id="status">
     <strong id="turn-text"></strong>
@@ -192,23 +241,10 @@
     <div class="board" id="board" role="grid" aria-label=""></div>
   </div>
 
-  <div class="controls">
-    <button class="btn primary" id="btn-new" type="button"></button>
-    <button class="btn" id="btn-rules" type="button" aria-expanded="true" aria-controls="rules"></button>
+  <!-- 対局後の「新しいゲーム」(スマホで上に戻らずに始められるように。SD-020) -->
+  <div class="controls" id="game-over" hidden>
+    <button class="gbtn gbtn-primary" id="btn-new-2" type="button"></button>
   </div>
-
-  <section class="rules" id="rules">
-    <h2 id="rules-title"></h2>
-    <ul id="rules-list"></ul>
-    <h2 id="keys-title" style="margin-top:0.5rem"></h2>
-    <ul id="keys-list"></ul>
-    <div class="seed-form">
-      <label for="seed-input" id="seed-label"></label>
-      <input id="seed-input" type="text" inputmode="numeric" autocomplete="off">
-      <button type="button" id="btn-seed"></button>
-    </div>
-    <p class="meta" id="seed-current"></p>
-  </section>
 </div>
 
 <script>
@@ -275,22 +311,20 @@ const content = {
   },
   ui: {
     title: '五目並べ',
-    subtitle: 'ひな型 v' + CONFIG.version,
     boardLabel: '五目並べの盤',
-    yourTurn: 'あなたの番(黒 ●)',
-    cpuTurn: 'CPUが考えています(白 ○)…',
-    win: 'あなたの勝ち(黒 ● が5つ並びました)',
-    lose: 'CPUの勝ち(白 ○ が5つ並びました)',
-    draw: '引き分け(盤が埋まりました)',
+    yourTurn: 'あなたの手番（黒 ●）',
+    cpuTurn: 'CPUが考えています（白 ○）…',
+    win: 'あなたの勝ち（黒 ● が5つ並びました）',
+    lose: 'CPUの勝ち（白 ○ が5つ並びました）',
+    draw: '引き分け（盤が埋まりました）',
     moveCount: '手数: {n}',
-    newGame: '新しいゲーム',
-    showRules: 'ルールを隠す',
-    hideRules: 'ルールを表示',
+    newGame: '新しいゲーム (N)',
+    rulesButton: 'ルール (R)',
     rulesTitle: 'ルール',
     rules: [
-      '2人対戦。あなたが黒(●)で先手、CPUが白(○)です。',
+      '2人対戦。あなたが黒（●）で先手、CPUが白（○）です。',
       '15×15の盤に、交互に空いている交点へ石を1つ置きます。',
-      '縦・横・斜めのいずれかに自分の石を5つ以上並べた側の勝ちです(6つ以上でも勝ち)。',
+      '縦・横・斜めのいずれかに自分の石を5つ以上並べた側の勝ちです（6つ以上でも勝ち）。',
       '三三・四四などの禁手はありません。パスもありません。',
       '盤がすべて埋まって勝者がいなければ引き分けです。',
     ],
@@ -298,18 +332,19 @@ const content = {
     keys: [
       '矢印キー: カーソル移動',
       'Enter / Space: 着手',
-      'R: 新しいゲーム',
-      '?: ルール表示の切り替え',
+      'N: 新しいゲーム',
+      'R: ルールの表示/非表示',
+      'Esc: ルールを閉じる',
     ],
-    seedLabel: 'シードを指定して開始',
-    seedButton: 'このシードで開始',
-    seedCurrent: '現在のシード: {seed}(同じシードと同じ手順なら同じ展開になります)',
-    seedInvalid: 'シードは0以上の整数で入力してください。',
+    seedLabel: 'シード（整数）',
+    seedButton: 'このシードで新しいゲーム',
+    seedCurrent: '現在のシード: {seed}',
+    seedInvalid: 'シードには0以上の整数を入れてください。',
     cellLabel: '{col}{row} {state}',
     cellEmpty: '空',
     cellStone: '{name}の石',
-    restored: '中断していたゲームを再開しました。',
-    corrupted: '保存データが壊れていたため破棄し、新しいゲームを始めました。',
+    restored: '中断したゲームを再開しました。',
+    corrupted: '保存データを読み込めなかったため、新しいゲームを始めました。',
     storageUnavailable: '保存機能が使えないため、リロードすると進行は失われます。',
   },
   // 座標ラベル(列は英字、行は数字)
@@ -624,6 +659,7 @@ const ui = (() => {
 
   function render() {
     for (let i = 0; i < cells.length; i++) renderCell(i);
+    $('game-over').hidden = !rules.isOver(state);
     let turnText;
     const turnEl = $('turn-text');
     turnEl.classList.remove('result');
@@ -683,9 +719,11 @@ const ui = (() => {
   }
 
   function onGlobalKey(e) {
+    // 4本共通の操作: N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる
+    if (e.key === 'Escape' && !$('rules').hidden) { e.preventDefault(); toggleRules(false); $('btn-rules').focus(); return; }
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
-    if (e.key === 'r' || e.key === 'R') { e.preventDefault(); startNew(newSeed()); }
-    else if (e.key === '?') { e.preventDefault(); toggleRules(); }
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); startNew(newSeed()); }
+    else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); toggleRules(); }
   }
 
   function startNew(seed) {
@@ -696,12 +734,11 @@ const ui = (() => {
     cells[cursor].focus();
   }
 
-  function toggleRules() {
+  function toggleRules(force) {
     const sec = $('rules'), btn = $('btn-rules');
-    const open = sec.hidden;
+    const open = force === undefined ? sec.hidden : force;
     sec.hidden = !open;
     btn.setAttribute('aria-expanded', String(open));
-    btn.textContent = open ? T.showRules : T.hideRules;
   }
 
   function setNotice(text) { $('notice').textContent = text; }
@@ -716,9 +753,9 @@ const ui = (() => {
   function fillTexts() {
     document.title = T.title + ' | 定番ゲーム | わくてかスタディ研究所';
     $('title').textContent = T.title;
-    $('subtitle').textContent = T.subtitle;
     $('btn-new').textContent = T.newGame;
-    $('btn-rules').textContent = T.showRules;
+    $('btn-new-2').textContent = T.newGame;
+    $('btn-rules').textContent = T.rulesButton;
     $('rules-title').textContent = T.rulesTitle;
     $('keys-title').textContent = T.keysTitle;
     for (const s of T.rules) { const li = document.createElement('li'); li.textContent = s; $('rules-list').appendChild(li); }
@@ -731,7 +768,8 @@ const ui = (() => {
     fillTexts();
     buildBoard();
     $('btn-new').addEventListener('click', () => startNew(newSeed()));
-    $('btn-rules').addEventListener('click', toggleRules);
+    $('btn-new-2').addEventListener('click', () => startNew(newSeed()));
+    $('btn-rules').addEventListener('click', () => toggleRules());
     $('btn-seed').addEventListener('click', onSeedSubmit);
     $('seed-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onSeedSubmit(); } });
     document.addEventListener('keydown', onGlobalKey);

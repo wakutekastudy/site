@@ -5,7 +5,7 @@
   ============================================================
   ゲーム名        : 7並べ / sevens
   版              : 0.1
-  最終更新日      : 2026-09-26(配札・先手、失格後の隣接判定、ルール表示中のCPU停止を修正)
+  最終更新日      : 2026-09-26(配札・先手、失格後の隣接判定、ルール表示中のCPU停止を修正) / 2026-09-27(暖色の配色、4本共通のボタン名・キー操作 N/R/Esc・ルール欄・ファビコン) / 2026-09-28(見出し・タイトル・ボタンの統一)
   ライセンス      : MIT-0(shared-decisions.md SD-007で決定)
   配置パス        : classic-games/sevens.html(shared-decisions.md SD-004)
 
@@ -49,15 +49,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>7並べ | 定番ゲーム | わくてかスタディ研究所</title>
+<meta name="description" content="7並べをブラウザで遊べます。場に置いた7を起点に、となりの数字を順に並べていきます。パスは3回まで。先に手札をなくした人の勝ちです。">
+<meta name="theme-color" content="#FFF8EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#24170F" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <style>
   :root {
-    --ink: #14213D;
-    --ink-soft: #4A5578;
-    --paper: #FCFAF7;
-    --paper-warm: #F3ECDC;
-    --spark: #FFC145;
-    --coral: #FF6B57;
-    /* --coral は --paper 上で 2.69:1 と 4.5:1 未満のため、赤スートの文字用に濃い色を別トークンとして定義 */
+    --ink: #3B2416;
+    --ink-soft: #6E5443;
+    --paper: #FFF8EE;
+    --paper-warm: #FFEBD2;
+    --spark: #E8792B; /* 強調の枠線・印(文字色には使わない) */
+        /* 赤スートの文字色(白 5.98:1) */
     --coral-ink: #B8321F;
     --bg: var(--paper);
     --bg-alt: var(--paper-warm);
@@ -66,23 +70,27 @@
     --red: var(--coral-ink);
     --black: var(--ink);
     --card-bg: #FFFFFF;
-    --card-border: #C9C2B4;
-    --focus: #1A56DB;
+    --card-border: #E3CBB0;
+    --cta: #B85215;
+    --cta-text: #FFFFFF;
+    --focus: var(--ink);
     --font-body: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
     --font-head: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: var(--ink);
-      --bg-alt: #1E2C4F;
-      --fg: var(--paper);
-      --fg-soft: #C9CFE0;
-      /* --coral は --ink 上で 5.70:1 あるので、ダークでは原色をそのまま使う */
-      --red: var(--coral);
-      --black: var(--paper);
-      --card-bg: #1B2745;
-      --card-border: #4A5578;
-      --focus: var(--spark);
+      --bg: #24170F;
+      --bg-alt: #33231A;
+      --fg: #FFF1E0;
+      --fg-soft: #D9C3AE;
+      /* 暗いカード #3A281C 上で 6.92:1 */
+      --red: #FF9C8C;
+      --black: #FFF1E0;
+      --card-bg: #3A281C;
+      --card-border: #6E5443;
+      --focus: #F29A55;
+      --cta: #F29A55;
+      --cta-text: #24170F;
     }
   }
   * { box-sizing: border-box; }
@@ -114,7 +122,7 @@
     outline-offset: 2px;
   }
   button:disabled { opacity: 0.5; cursor: default; }
-  .btn-primary { background: var(--spark); color: var(--ink); border-color: transparent; font-weight: 600; }
+  .btn-primary { background: var(--cta); color: var(--cta-text); border-color: transparent; font-weight: 600; }
   header {
     display: flex;
     flex-wrap: wrap;
@@ -130,7 +138,7 @@
   .notice {
     padding: 0.5rem 0.75rem;
     margin: 0.5rem 0;
-    border-left: 4px solid var(--coral);
+    border-left: 4px solid var(--spark);
     background: var(--bg-alt);
     font-size: 0.9rem;
   }
@@ -219,24 +227,58 @@
     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
   }
   /* サイト内の戻り導線(公開プラットフォーム側で追加) */
-  .site-back { font-size: 0.85rem; padding: 0.5rem 0.75rem 0; }
+  /* 4本共通(SD-020 案①):ページ最上部の戻りリンク。位置・余白・区切り線をそろえる */
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin: 0 0 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
   .site-back a { color: inherit; text-underline-offset: 0.2em; }
   .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+  /* ===== 4本共通:見出し・タイトル・ボタン(SD-020。4本とも同じ内容。--gh-width だけゲームごとに変える) ===== */
+  :root {
+    --gh-width: 60rem;           /* ゲーム本体の幅。戻りリンクと見出しをこの幅にそろえる */
+    --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
+    --gh-cta: #B85215; --gh-cta-fg: #FFFFFF;   /* 白文字 4.93:1 */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --gh-btn-bg: #33231A; --gh-btn-fg: #FFF1E0; --gh-btn-line: #6E5443; --gh-cta: #F29A55; --gh-cta-fg: #24170F; }
+  }
+  [hidden] { display: none !important; }
+  .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
+  .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
+  .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  button.gbtn { font: inherit; font-size: 1rem; line-height: 1.2; font-weight: 400; min-height: 2.75rem; padding: 0.5rem 1rem; border-radius: 0.5rem;
+    border: 1px solid var(--gh-btn-line); background: var(--gh-btn-bg); color: var(--gh-btn-fg); cursor: pointer; }
+  button.gbtn.gbtn-primary { background: var(--gh-cta); color: var(--gh-cta-fg); border-color: var(--gh-cta); font-weight: 700; }
+  @media (max-width: 480px) {
+    .game-head, .game-actions { gap: 0.4rem; }
+    .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
+  }
+  .site-back.gh-col { padding-left: 0; padding-right: 0; }
 </style>
 </head>
 <body>
-<nav class="site-back" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
-<header>
-  <div>
-    <h1 id="title"></h1>
-    <div class="seed"><span id="seed-label"></span> <span id="seed-value"></span></div>
-  </div>
-  <div class="actions">
-    <button type="button" id="btn-rules"></button>
-    <button type="button" id="btn-new"></button>
+<nav class="site-back gh-col" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
+<header class="game-head gh-col">
+  <h1 id="title"></h1>
+  <div class="game-actions">
+    <button type="button" id="btn-rules" class="gbtn" aria-expanded="false" aria-controls="rules"></button>
+    <button type="button" id="btn-new" class="gbtn gbtn-primary"></button>
   </div>
 </header>
 <main>
+  <section id="rules" class="panel" hidden aria-labelledby="rules-title">
+    <h2 id="rules-title"></h2>
+    <ul id="rules-list"></ul>
+    <h2>キーボード操作</h2>
+    <ul id="keys-list"></ul>
+    <h2 id="seed-title"></h2>
+    <p class="hint"><span id="seed-label"></span> <span id="seed-value"></span></p>
+    <p id="seed-desc" class="hint"></p>
+    <div class="seed-form">
+      <label for="seed-input" id="seed-input-label"></label>
+      <input type="text" id="seed-input" inputmode="numeric" autocomplete="off">
+      <button type="button" id="btn-seed-start"></button>
+    </div>
+  </section>
   <div id="notice" class="notice" hidden></div>
   <div id="message" class="message" role="status" aria-live="polite"></div>
 
@@ -255,30 +297,15 @@
         <button type="button" id="btn-play" class="btn-primary"></button>
         <button type="button" id="btn-pass"></button>
       </div>
-      <p id="key-hint" class="hint"></p>
     </section>
 
     <section id="result" class="panel result" hidden aria-labelledby="result-title">
       <h2 id="result-title"></h2>
       <ol id="result-list"></ol>
-      <button type="button" id="btn-new-2" class="btn-primary"></button>
+      <button type="button" id="btn-new-2" class="gbtn gbtn-primary"></button>
     </section>
   </section>
 
-  <section id="rules" class="panel" hidden aria-labelledby="rules-title">
-    <h2 id="rules-title"></h2>
-    <ul id="rules-list"></ul>
-    <h2 id="seed-title"></h2>
-    <p id="seed-desc" class="hint"></p>
-    <div class="seed-form">
-      <label for="seed-input" id="seed-input-label"></label>
-      <input type="text" id="seed-input" inputmode="numeric" autocomplete="off">
-      <button type="button" id="btn-seed-start"></button>
-    </div>
-    <div class="controls">
-      <button type="button" id="btn-rules-close"></button>
-    </div>
-  </section>
 </main>
 
 <script>
@@ -654,14 +681,14 @@ const storage = (() => {
 // 描画とイベント処理。状態は直接書き換えず、必ず rules.apply を通す。
 const TEXT = {
   title: "7並べ",
-  seedLabel: "シード:",
-  rules: "ルール",
-  newGame: "新規ゲーム",
+  seedLabel: "現在のシード:",
+  rules: "ルール (R)",
+  newGame: "新しいゲーム (N)",
   boardTitle: "場",
   handTitle: "あなたの手札",
   play: "出す",
   pass: "パス",
-  keyHint: "キー操作:← → で手札を選ぶ、Enter で出す、P でパス",
+  keys: ["← / →: 手札を選ぶ", "Enter: 選んだ札を出す", "P: パス", "N: 新しいゲーム", "R: ルールの表示/非表示", "Esc: ルールを閉じる"],
   handStatus: (n, passes) => `${n}枚 / パス ${passes}/${CONFIG.MAX_PASS}`,
   cards: (n) => `${n}枚`,
   passes: (n) => `パス ${n}/${CONFIG.MAX_PASS}`,
@@ -670,41 +697,40 @@ const TEXT = {
   yourTurn: "あなたの手番です。",
   yourTurnNoPlay: "あなたの手番です。出せる札がないのでパスしてください。",
   cpuPlayed: (name, card) => `${name}が ${card} を出しました。`,
-  cpuPassed: (name, n) => `${name}はパスしました(${n}/${CONFIG.MAX_PASS})。`,
+  cpuPassed: (name, n) => `${name}はパスしました（${n}/${CONFIG.MAX_PASS}）。`,
   finished: (name) => `${name}が上がりました。`,
   disqualified: (name) => `${name}は4回目のパスで失格。手札をすべて場に置きました。`,
   youPlayed: (card) => `あなたは ${card} を出しました。`,
-  youPassed: (n) => `あなたはパスしました(${n}/${CONFIG.MAX_PASS})。`,
-  gameStart: (name) => `ゲーム開始。先手は${name}(♦7を持っていました)。`,
+  youPassed: (n) => `あなたはパスしました（${n}/${CONFIG.MAX_PASS}）。`,
+  gameStart: (name) => `ゲーム開始。先手は${name}（♦7を持っていました）。`,
   gameOver: "ゲーム終了。",
   resultTitle: "結果",
   rank: (i, name) => `${i}位:${name}`,
-  rankDq: (i, name) => `${i}位:${name}(失格)`,
+  rankDq: (i, name) => `${i}位:${name}（失格）`,
   cannotPlay: "その札は今は出せません。",
   selectFirst: "手札を選んでください。",
   notYourTurn: "今はあなたの手番ではありません。",
   restored: "中断したゲームを再開しました。",
-  corrupted: "保存データが壊れていたため破棄し、新しいゲームを始めました。",
-  rulesTitle: "採用ルール",
+  corrupted: "保存データを読み込めなかったため、新しいゲームを始めました。",
+  rulesTitle: "ルール",
   rulesList: [
-    "4人(あなた1人、CPU3人)。ジョーカーなし、52枚。",
-    "52枚を13枚ずつ配り、持っている7を場に出します(手札の枚数は人によって変わります)。",
+    "4人（あなた＋CPU3人）。ジョーカーなし、52枚。",
+    "52枚を13枚ずつ配り、持っている7を場に出します（手札の枚数は人によって変わります）。",
     "先手は♦7を持っていた人。以後、時計回り。",
-    "出せるのは、7から途切れずにつながった列の次の数字だけ(6→5→…→A、8→9→…→K)。",
+    "出せるのは、7から途切れずにつながった列の次の数字だけ（6→5→…→A、8→9→…→K）。",
     "失格者の札で先が埋まっている場合は、列がそこまで届くと飛び越して次の数字が出せます。",
-    "AとKはつながりません(トンネルなし)。",
+    "AとKはつながりません（トンネルなし）。",
     "出せる札があってもパスできます。1人3回まで。4回目のパスで失格。",
     "失格した人の手札は、場の正しい位置にすべて置かれます。",
     "順位は手札を早く出し切った順。失格者は、失格した順に下位になります。",
     "CPUは出せる札がある限りパスしません。",
-    "スートは記号と文字で表します(例:♥7 ハート)。"
+    "スートは記号と文字で表します（例:♥7 ハート）。"
   ],
   seedTitle: "シード",
-  seedDesc: "同じシードで始めて同じ操作をすると、同じ展開になります。数値を入れて新規開始できます。",
-  seedInputLabel: "シード(整数)",
-  seedStart: "このシードで開始",
+  seedDesc: "同じシードで同じ操作をすると、同じ展開になります。",
+  seedInputLabel: "シード（整数）",
+  seedStart: "このシードで新しいゲーム",
   seedInvalid: "シードには整数を入れてください。",
-  close: "閉じる",
   cardLabel: (suitName, symbol, rank) => `${symbol}${rank} ${suitName}`
 };
 
@@ -716,11 +742,11 @@ const TEXT = {
     notice: $("notice"), message: $("message"),
     game: $("game"), boardTitle: $("board-title"), board: $("board"), players: $("players"),
     handTitle: $("hand-title"), handStatus: $("hand-status"), hand: $("hand"),
-    btnPlay: $("btn-play"), btnPass: $("btn-pass"), keyHint: $("key-hint"),
+    btnPlay: $("btn-play"), btnPass: $("btn-pass"), keysList: $("keys-list"),
     result: $("result"), resultTitle: $("result-title"), resultList: $("result-list"),
     rules: $("rules"), rulesTitle: $("rules-title"), rulesList: $("rules-list"),
     seedTitle: $("seed-title"), seedDesc: $("seed-desc"), seedInputLabel: $("seed-input-label"),
-    seedInput: $("seed-input"), btnSeedStart: $("btn-seed-start"), btnRulesClose: $("btn-rules-close")
+    seedInput: $("seed-input"), btnSeedStart: $("btn-seed-start")
   };
 
   let state = null;
@@ -751,7 +777,8 @@ const TEXT = {
     el.handTitle.textContent = TEXT.handTitle;
     el.btnPlay.textContent = TEXT.play;
     el.btnPass.textContent = TEXT.pass;
-    el.keyHint.textContent = TEXT.keyHint;
+    clearChildren(el.keysList);
+    TEXT.keys.forEach((t) => { const li = document.createElement("li"); li.textContent = t; el.keysList.appendChild(li); });
     el.resultTitle.textContent = TEXT.resultTitle;
     el.rulesTitle.textContent = TEXT.rulesTitle;
     clearChildren(el.rulesList);
@@ -764,7 +791,6 @@ const TEXT = {
     el.seedDesc.textContent = TEXT.seedDesc;
     el.seedInputLabel.textContent = TEXT.seedInputLabel;
     el.btnSeedStart.textContent = TEXT.seedStart;
-    el.btnRulesClose.textContent = TEXT.close;
   }
 
   function showNotice(text) {
@@ -952,7 +978,7 @@ const TEXT = {
     lastPlacedCard = -1;
     showNotice("");
     el.rules.hidden = true;
-    el.game.hidden = false;
+    el.btnRules.setAttribute("aria-expanded", "false");
     commit(rules.newGame(seed));
   }
 
@@ -969,7 +995,11 @@ const TEXT = {
 
   function onKey(e) {
     const t = e.target;
+    // 4本共通の操作: N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる
+    if (e.key === "Escape" && !el.rules.hidden) { e.preventDefault(); toggleRules(false); return; }
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    if (e.key === "n" || e.key === "N") { e.preventDefault(); startNew(freshSeed()); return; }
+    if (e.key === "r" || e.key === "R") { e.preventDefault(); toggleRules(el.rules.hidden); return; }
     if (!el.rules.hidden) return;
     if (e.key === "ArrowLeft") { e.preventDefault(); moveSelection(-1); }
     else if (e.key === "ArrowRight") { e.preventDefault(); moveSelection(1); }
@@ -983,12 +1013,12 @@ const TEXT = {
   }
 
   function toggleRules(show) {
+    // ルールを開いている間はCPUを止める(閉じたら再開)
     el.rules.hidden = !show;
-    el.game.hidden = show;
+    el.btnRules.setAttribute("aria-expanded", String(show));
     if (show) {
       cancelCpu();
-      el.seedInput.value = String(state.seed);
-      el.btnRulesClose.focus();
+      el.seedInput.value = "";
     } else {
       el.btnRules.focus();
       if (state.phase === "playing" && rules.isCpu(state.turn)) scheduleCpu();
@@ -998,7 +1028,6 @@ const TEXT = {
   function init() {
     setStaticText();
     el.btnRules.addEventListener("click", () => toggleRules(el.rules.hidden));
-    el.btnRulesClose.addEventListener("click", () => toggleRules(false));
     el.btnNew.addEventListener("click", () => startNew(freshSeed()));
     el.btnNew2.addEventListener("click", () => startNew(freshSeed()));
     el.btnPlay.addEventListener("click", playSelected);
