@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<!--
+  学習ゲーム(learning-games/index.html)
+  配置: shared-decisions.md SD-004。現在は「準備中」の案内ページ。
+  クイズエンジン(play.html)と投稿パックの一覧(packs/index.json)ができたら、学習ゲームの一覧ページに置き換える(handoff-brief.md §3)。
+  定番ゲーム一覧へのリンクを置く(SD-012)。
+-->
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>学習ゲーム | わくてかスタディ研究所</title>
+<meta name="description" content="ゲームライクな学習ゲームを準備しています。">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<meta name="theme-color" content="#FFF8EE">
+<style>
+  /* デザイントークン(ホームと共通。水色は白と隣接する箇所にだけ使う:SD-015) */
+  :root {
+    --ink: #3B2416;
+    --ink-soft: #6E5443;
+    --paper: #FFF8EE;
+    --paper-warm: #FFEBD2;
+    --card: #FFFFFF;
+    --line: #F0DCC4;
+    --orange: #E8792B;
+    --orange-deep: #B85215;
+    --sky: #7EC8E3;
+    --sky-deep: #1D6480;
+    --font-display: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body { margin: 0; font-family: var(--font-body); color: var(--ink); background: var(--paper); line-height: 1.8; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3 { font-family: var(--font-display); margin: 0; line-height: 1.4; }
+  a { color: inherit; }
+  img { max-width: 100%; height: auto; }
+  .skip-link { position: absolute; left: -999px; top: 0; background: var(--orange-deep); color: #fff; padding: 0.6em 1em; z-index: 100; font-weight: 700; }
+  .skip-link:focus { left: 1em; top: 1em; }
+  :focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* header(画面上部に固定。ホームと共通) */
+  .site-header { position: sticky; top: 0; z-index: 50; padding: 0.9rem 0; background: var(--paper); border-bottom: 1px solid var(--line); }
+  section[id] { scroll-margin-top: 3.8rem; }
+  .site-header .wrap { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem 1rem; flex-wrap: wrap; }
+  .mark { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; letter-spacing: 0.02em; text-decoration: none; }
+  .mark span { color: var(--orange-deep); }
+  .site-nav { display: flex; gap: 1.4rem; flex-wrap: wrap; }
+  .site-nav a { text-decoration: none; font-size: 0.93rem; color: var(--ink-soft); }
+  .site-nav a:hover { color: var(--ink); }
+  .site-nav a[aria-current="page"] { color: var(--ink); font-weight: 700; }
+
+  /* page head(ホームの冒頭部分と同じ:クリーム単色＋マスコット背後の白い円) */
+  .page-head { background: var(--paper-warm); overflow: hidden; }
+  /* マスコットは全ページ同じ大きさ・位置(PC 320px/スマホ 200px。右枠340px固定・冒頭部分の最低の高さ27rem) */
+  .page-head .wrap { display: grid; grid-template-columns: 1fr 340px; align-items: center; gap: 1.5rem; min-height: 27rem; padding-top: 2.5rem; padding-bottom: 3rem; }
+  .breadcrumb { font-size: 0.85rem; color: var(--ink-soft); margin: 0 0 1.1rem; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 0.4em; }
+  .breadcrumb a { color: var(--ink); }
+  .breadcrumb li + li::before { content: "／"; margin-right: 0.4em; }
+  .page-head h1 { font-size: clamp(2rem, 5.2vw, 3.1rem); line-height: 1.35; letter-spacing: 0.01em; }
+  .page-head .en { display: block; font-family: var(--font-body); font-size: clamp(0.8rem, 1.8vw, 0.95rem); letter-spacing: 0.16em; color: var(--ink-soft); margin-top: 0.6rem; font-weight: 500; }
+  .page-head .lead { margin: 1.4rem 0 0; max-width: 30em; font-size: clamp(1rem, 2vw, 1.08rem); }
+  .mascot { position: relative; margin: 0; justify-self: center; align-self: start; }
+  .mascot::before { content: ""; position: absolute; inset: 9% 5% 1%; border-radius: 50%; background: #fff; box-shadow: 0 0 0 10px rgba(255, 255, 255, 0.45); }
+  .mascot img { position: relative; display: block; width: 320px; }
+
+  /* 本文が短いページでも、フッターを画面下端に置き、冒頭部分の背景を伸ばす */
+  body { min-height: 100vh; display: flex; flex-direction: column; }
+  main { flex: 1; display: flex; flex-direction: column; }
+  .page-head { flex: 1; }
+
+  /* ラベル(準備中) */
+  .eyebrow { display: inline-block; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.1em; padding: 0.15em 0.75em; border-radius: 999px; margin-bottom: 0.7rem; }
+  .eyebrow.soon { background: #EFE7DD; color: var(--ink-soft); }
+
+  /* footer(ホームと共通) */
+  footer { background: var(--ink); color: rgba(255, 248, 238, 0.75); padding: 2.75rem 0; font-size: 0.9rem; }
+  footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
+  footer .mark { color: #FFF8EE; }
+  footer p { margin: 0.4rem 0 0; }
+  footer a { color: #FFF8EE; }
+  footer .foot-links { display: flex; gap: 1.25rem; flex-wrap: wrap; }
+
+  @media (max-width: 760px) {
+    .site-header { padding: 0.55rem 0 0.5rem; }
+    .site-header .wrap { gap: 0.2rem 1rem; }
+    .mark { font-size: 1rem; }
+    .site-nav { gap: 0.3rem 1.1rem; }
+    .site-nav a { font-size: 0.85rem; padding: 0.25rem 0; }
+    .page-head .wrap { grid-template-columns: 1fr; min-height: 0; padding-top: 1.5rem; gap: 0.5rem; }
+    .mascot { order: -1; }
+    .mascot img { width: 200px; }
+  }
+  @media (max-width: 380px) {
+    .site-nav { gap: 0.3rem 0.8rem; }
+    .site-nav a { font-size: 0.8rem; }
+  }
+</style>
+</head>
+<body id="top">
+<a class="skip-link" href="#main">本文へ移動</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="mark" href="../">わくてか<span>スタディ</span>研究所</a>
+    <nav class="site-nav" aria-label="サイト内">
+      <a href="../">ホーム</a>
+      <a href="./" aria-current="page">学習ゲーム</a>
+      <a href="../classic-games/">定番ゲーム</a>
+    </nav>
+  </div>
+</header>
+<main id="main">
+  <div class="page-head">
+    <div class="wrap">
+      <div>
+        <ol class="breadcrumb" aria-label="現在地">
+          <li><a href="../">ホーム</a></li>
+          <li aria-current="page">学習ゲーム</li>
+        </ol>
+        <span class="eyebrow soon">準備中</span>
+        <h1>学習ゲーム<span class="en">LEARNING GAMES</span></h1>
+        <p class="lead">ゲームライクな学習ゲームを準備しています。</p>
+      </div>
+      <figure class="mascot">
+        <img src="../assets/mascot-480.webp"
+             srcset="../assets/mascot-480.webp 480w, ../assets/mascot-960.webp 960w"
+             sizes="(max-width: 760px) 200px, 320px"
+             width="480" height="480"
+             alt="手を振る研究員のキツネ、モイチ"
+             fetchpriority="high">
+      </figure>
+    </div>
+  </div>
+</main>
+<footer>
+  <div class="wrap">
+    <div>
+      <a class="mark" href="../" style="text-decoration:none">わくてかスタディ研究所</a>
+      <p>ゲームの楽しさを、学びの仕組みに。</p>
+    </div>
+    <div class="foot-links">
+      <a href="#top">ページの先頭へ <span aria-hidden="true">↑</span></a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

@@ -45,7 +45,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>リバーシ | 古典ゲーム | わくてかスタディ研究所</title>
+<title>リバーシ | 定番ゲーム | わくてかスタディ研究所</title>
 <style>
   :root {
     --ink: #14213D;
@@ -185,7 +185,7 @@
 </style>
 </head>
 <body>
-<nav class="site-back" style="max-width:32rem;margin:0 auto" aria-label="サイト内"><a href="./">← 古典ゲーム一覧</a> ／ <a href="../">トップ</a></nav>
+<nav class="site-back" style="max-width:32rem;margin:0 auto" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
 <header>
   <h1 id="title"></h1>
   <span id="seedView" class="seed-view"></span>
@@ -573,7 +573,7 @@ const ui = {
       seedLabel: q("seedLabel"), seedInput: q("seedInput"), btnSeedStart: q("btnSeedStart"), footNote: q("footNote")
     };
     ui.el.title.textContent = TEXT.title;
-    document.title = TEXT.title + ' | 古典ゲーム | わくてかスタディ研究所';
+    document.title = TEXT.title + ' | 定番ゲーム | わくてかスタディ研究所';
     ui.el.footNote.textContent = TEXT.footNote(CONFIG.version, CONFIG.license);
     ui.buildBoard();
     ui.buildRules();
