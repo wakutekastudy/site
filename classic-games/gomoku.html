@@ -1,19 +1,19 @@
 <!DOCTYPE html>
 <!--
   ============================================================
-  ひな型: 五目並べ / gomoku
+  わくてかスタディ研究所 定番ゲーム: 五目並べ / gomoku
   ============================================================
   版:            0.1
-  最終更新日:    2026-09-23(SD-004/007/008/009の反映) / 2026-09-27(暖色の配色、4本共通のボタン名・キー操作 N/R/Esc・ルール欄・ファビコン) / 2026-09-28(見出し・タイトル・ボタンの統一)
-  ライセンス:    MIT-0(shared-decisions.md SD-007で決定)
-  配置パス:      classic-games/gomoku.html(shared-decisions.md SD-004)
+  最終更新日:    2026-09-28
+  ライセンス:    MIT-0(リポジトリの LICENSE を参照)
+  配置パス:      classic-games/gomoku.html
 
-  3軸チェック(shared-decisions.md SD-001):
+  題材の確認(ルール・名称・見た目の3点):
     ①メカニクス: 五目並べは数百年来の伝統的な盤上遊戯。特定企業が主張するメカニクスなし → 問題なし
     ②名称・ブランド: 「五目並べ」は一般名称。競技名の「連珠」は使わない(禁手ルールも採用しない) → 問題なし
     ③具体的な表現: 盤・石はCSS/DOMのみで独自描画。既存製品の意匠を模倣しない → 問題なし
 
-  採用ルール(運営者確認済み・変更禁止):
+  採用ルール(確定。変える場合は運営者に確認):
     - 2人(人間=黒・先手、CPU=白)、15×15の碁盤、空盤から開始、交互に空点へ1石
     - 縦・横・斜めいずれかに5個以上並べた側の勝ち(長連も勝ち=自由五目)。三三・四四の禁手なし
     - パスなし。225点すべて埋まって勝者なしなら引き分け
@@ -177,11 +177,7 @@
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   kbd { font-family: inherit; border: 1px solid var(--fg-soft); border-radius: 0.25rem; padding: 0 0.3rem; font-size: 0.85em; }
   /* サイト内の戻り導線(公開プラットフォーム側で追加) */
-  /* 4本共通(SD-020 案①):ページ最上部の戻りリンク。位置・余白・区切り線をそろえる */
-  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin: 0 0 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
-  .site-back a { color: inherit; text-underline-offset: 0.2em; }
-  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
-  /* ===== 4本共通:見出し・タイトル・ボタン(SD-020。4本とも同じ内容。--gh-width だけゲームごとに変える) ===== */
+  /* ===== 共通ここから:戻りリンク・見出し・タイトル・ボタン(全ゲームで同じ内容。変えてよいのは --gh-width の値だけ。正本は _dev/game-template.html) ===== */
   :root {
     --gh-width: 32rem;           /* ゲーム本体の幅。戻りリンクと見出しをこの幅にそろえる */
     --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
@@ -192,6 +188,10 @@
   }
   [hidden] { display: none !important; }
   .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin-top: 0; margin-bottom: 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+  .site-back.gh-col { padding-left: 0; padding-right: 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
   .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
   .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
   .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -202,7 +202,7 @@
     .game-head, .game-actions { gap: 0.4rem; }
     .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
   }
-  .site-back.gh-col { padding-left: 0; padding-right: 0; }
+  /* ===== 共通ここまで ===== */
 </style>
 </head>
 <body>
@@ -241,7 +241,7 @@
     <div class="board" id="board" role="grid" aria-label=""></div>
   </div>
 
-  <!-- 対局後の「新しいゲーム」(スマホで上に戻らずに始められるように。SD-020) -->
+  <!-- 対局後の「新しいゲーム」(スマホで上に戻らずに始められるように) -->
   <div class="controls" id="game-over" hidden>
     <button class="gbtn gbtn-primary" id="btn-new-2" type="button"></button>
   </div>
@@ -256,11 +256,11 @@
 const CONFIG = Object.freeze({
   slug: 'gomoku',
   version: '0.1',
-  license: 'MIT-0',                      // shared-decisions.md SD-007
-  pathHint: 'classic-games/gomoku.html',  // shared-decisions.md SD-004
-  storageKey: 'wktks.game.gomoku',        // shared-decisions.md SD-008
-  boardSize: 15,                          // 運営者確認済み
-  winLength: 5,                           // 運営者確認済み(5個以上で勝ち)
+  license: 'MIT-0',
+  pathHint: 'classic-games/gomoku.html',
+  storageKey: 'wktks.game.gomoku',
+  boardSize: 15,                          // 確定したルール
+  winLength: 5,                           // 確定したルール(5個以上で勝ち)
   cpuDelayMs: 450,                        // CPUの間(演出のための待ち時間。長すぎない程度)
   maxHistory: 15 * 15,                    // 異常データでフリーズしないための上限
 });
@@ -719,7 +719,7 @@ const ui = (() => {
   }
 
   function onGlobalKey(e) {
-    // 4本共通の操作: N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる
+    // 全ゲーム共通の操作: N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる
     if (e.key === 'Escape' && !$('rules').hidden) { e.preventDefault(); toggleRules(false); $('btn-rules').focus(); return; }
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
     if (e.key === 'n' || e.key === 'N') { e.preventDefault(); startNew(newSeed()); }

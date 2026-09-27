@@ -1,20 +1,20 @@
 <!DOCTYPE html>
 <!--
   ============================================================
-  ひな型ヘッダ(template-guideline.md 第8章)
+  わくてかスタディ研究所 定番ゲーム: 7並べ
   ============================================================
   ゲーム名        : 7並べ / sevens
   版              : 0.1
-  最終更新日      : 2026-09-26(配札・先手、失格後の隣接判定、ルール表示中のCPU停止を修正) / 2026-09-27(暖色の配色、4本共通のボタン名・キー操作 N/R/Esc・ルール欄・ファビコン) / 2026-09-28(見出し・タイトル・ボタンの統一)
-  ライセンス      : MIT-0(shared-decisions.md SD-007で決定)
-  配置パス        : classic-games/sevens.html(shared-decisions.md SD-004)
+  最終更新日      : 2026-09-28
+  ライセンス      : MIT-0(リポジトリの LICENSE を参照)
+  配置パス        : classic-games/sevens.html
 
-  3軸チェック結果(shared-decisions.md SD-001)
+  題材の確認(ルール・名称・見た目の3点)
     ① メカニクス : トランプの伝統的ゲーム。特定企業の主張なし → 問題なし
     ② 名称       : 「7並べ」「トランプ」は一般名称 → 問題なし
     ③ 表現       : 絵柄は既存商品を模倣せず、Unicode記号(♠♥♦♣)と文字のみで独自に描画 → 問題なし
 
-  採用ルール(運営者確認済み)
+  採用ルール(確定)
     - 4人(人間1、CPU3)。ジョーカーなし、52枚
     - 52枚を13枚ずつ配り、各自が持っている7を場に出す(手札の枚数は7の枚数により異なる)
     - 先手は♦7を持っていた人。以後時計回り
@@ -227,11 +227,7 @@
     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
   }
   /* サイト内の戻り導線(公開プラットフォーム側で追加) */
-  /* 4本共通(SD-020 案①):ページ最上部の戻りリンク。位置・余白・区切り線をそろえる */
-  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin: 0 0 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
-  .site-back a { color: inherit; text-underline-offset: 0.2em; }
-  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
-  /* ===== 4本共通:見出し・タイトル・ボタン(SD-020。4本とも同じ内容。--gh-width だけゲームごとに変える) ===== */
+  /* ===== 共通ここから:戻りリンク・見出し・タイトル・ボタン(全ゲームで同じ内容。変えてよいのは --gh-width の値だけ。正本は _dev/game-template.html) ===== */
   :root {
     --gh-width: 60rem;           /* ゲーム本体の幅。戻りリンクと見出しをこの幅にそろえる */
     --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
@@ -242,6 +238,10 @@
   }
   [hidden] { display: none !important; }
   .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin-top: 0; margin-bottom: 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+  .site-back.gh-col { padding-left: 0; padding-right: 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
   .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
   .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
   .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -252,7 +252,7 @@
     .game-head, .game-actions { gap: 0.4rem; }
     .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
   }
-  .site-back.gh-col { padding-left: 0; padding-right: 0; }
+  /* ===== 共通ここまで ===== */
 </style>
 </head>
 <body>
@@ -314,7 +314,7 @@
 // ===== config =====
 // 仮の値(未確定事項)はここに集約する。独断で確定しないため、変更時はここだけ直す。
 const CONFIG = {
-  STORAGE_PREFIX: "wktks.",      // shared-decisions.md SD-008
+  STORAGE_PREFIX: "wktks.",
   STORAGE_KEY: "game.sevens",
   CPU_DELAY_MS: 700,            // CPUの行動が目で追える程度の間
   PLAYER_COUNT: 4,
@@ -368,7 +368,7 @@ const rng = (() => {
 
 // ===== content =====
 // 表示名など差し替え可能なデータ。rules はこの中身を見ず、スート番号と数字だけを扱う。
-// 将来は JSON として外から差し込める形にしておく(ひな型では読み込み機能は作らない)。
+// 将来は JSON として外から差し込める形にしておく(今は読み込み機能は作らない)。
 const content = {
   suits: [
     { key: "S", symbol: "♠", name: "スペード", color: "black" },
@@ -995,7 +995,7 @@ const TEXT = {
 
   function onKey(e) {
     const t = e.target;
-    // 4本共通の操作: N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる
+    // 全ゲーム共通の操作: N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる
     if (e.key === "Escape" && !el.rules.hidden) { e.preventDefault(); toggleRules(false); return; }
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
     if (e.key === "n" || e.key === "N") { e.preventDefault(); startNew(freshSeed()); return; }

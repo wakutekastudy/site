@@ -1,37 +1,37 @@
 <!DOCTYPE html>
 <!--
   ============================================================
-  わくてかスタディ研究所 ひな型: リバーシ (reversi)
+  わくてかスタディ研究所 定番ゲーム: リバーシ (reversi)
   ============================================================
   ゲーム名      : リバーシ / reversi
   版            : 0.1
-  最終更新日    : 2026-09-23(SD-004/007/008の反映) / 2026-09-27(暖色の配色、4本共通のボタン名・キー操作 N/R/Esc・ルール欄・ファビコン) / 2026-09-28(見出し・タイトル・ボタンの統一)
-  ライセンス    : MIT-0(shared-decisions.md SD-007で決定)
-  配置パス      : classic-games/reversi.html(shared-decisions.md SD-004)
+  最終更新日    : 2026-09-28
+  ライセンス    : MIT-0(リポジトリの LICENSE を参照)
+  配置パス      : classic-games/reversi.html
 
-  --- 3軸チェック(SD-001) ---
+  --- 題材の確認(ルール・名称・見た目の3点) ---
   ①メカニクス : 挟んで反転する盤上ゲームは19世紀末から存在し、特定企業の主張はない → 問題なし
   ②名称        : 「オセロ」は国内で現役の登録商標のため使用しない。一般名称「リバーシ」を採用 → 問題なし
   ③具体的表現 : 緑盤・専用ロゴ等は使わず、デザイントークン(--paper-warm/--ink)で独自配色 → 問題なし
 
-  --- 採用ルール(運営者確認済み・2026-09-20) ---
+  --- 採用ルール(2026-09-20 確定) ---
   - 8×8盤、人間(黒・先手) vs CPU(白)。標準初期配置(d4白 e4黒 d5黒 e5白)
   - 1手=相手石を1枚以上挟める空マスに置き、全方向まとめて反転
   - 合法手なしは自動パス(表示付き)。両者パスまたは盤が埋まると終了
   - 石数の多い方が勝ち。同数は引き分け(空マスは加算しない)
   - ハンデ・先手選択・持ち時間なし
   - CPU: ①角を取れる手 ②X打ち・C打ちを避ける ③反転数が最少(残り空マス12以下では最多)。同点は rng.mix(seed, 手数) で選ぶ
-  - キー操作(SD-008): ←→↑↓ カーソル移動 / Enter・Space 石を置く / N 新規 / R ルール表示切替 / Esc ルールを閉じる
+  - キー操作: ←→↑↓ カーソル移動 / Enter・Space 石を置く / N 新しいゲーム / R ルール表示切替 / Esc ルールを閉じる
 
   --- 流用できる部品 ---
-  - rng.mix / rng.make(シード付き疑似乱数、SD-004方式)
+  - rng.mix / rng.make(シード付き疑似乱数)
   - rules.legalMoves(8方向走査で「挟める列」を求める汎用ロジック)
   - rules.apply(状態+操作→新状態の純関数)
   - ai.choose(優先順位付き評価＋シード乱数の同点判定)
   - storage(保存・読込・検証・破損時フォールバック)
   - ui の盤面キーボード操作(roving tabindex によるカーソル移動)
 
-  --- 転用メモ(template-guideline.md §7) ---
+  --- 転用メモ ---
   1. 仕組みの核: 自分の石2つで相手の石を「挟む」と、挟んだものが自分のものになる
   2. 転用アイディア(実装しない):
      - マスに単語を置き、「反対語ペア」で挟むと得点(語彙学習)
@@ -59,7 +59,7 @@
     --paper-warm: #FFEBD2;
     --spark: #E8792B; /* 強調の枠線・印(文字色には使わない) */
     --coral: #D64545; /* 直前の一手の印 */
-    --coral-ink: #B8321F; /* SD-005: ライトの赤系文字用(--paper 5.67:1) */
+    --coral-ink: #B8321F; /* ライトの赤系文字用(--paper 5.67:1) */
     --focus: var(--ink);
     --cta: #B85215;
     --cta-text: #FFFFFF;
@@ -193,11 +193,7 @@
     overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
   }
   /* サイト内の戻り導線(公開プラットフォーム側で追加) */
-  /* 4本共通(SD-020 案①):ページ最上部の戻りリンク。位置・余白・区切り線をそろえる */
-  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin: 0 0 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
-  .site-back a { color: inherit; text-underline-offset: 0.2em; }
-  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
-  /* ===== 4本共通:見出し・タイトル・ボタン(SD-020。4本とも同じ内容。--gh-width だけゲームごとに変える) ===== */
+  /* ===== 共通ここから:戻りリンク・見出し・タイトル・ボタン(全ゲームで同じ内容。変えてよいのは --gh-width の値だけ。正本は _dev/game-template.html) ===== */
   :root {
     --gh-width: 32rem;           /* ゲーム本体の幅。戻りリンクと見出しをこの幅にそろえる */
     --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
@@ -208,6 +204,10 @@
   }
   [hidden] { display: none !important; }
   .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin-top: 0; margin-bottom: 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+  .site-back.gh-col { padding-left: 0; padding-right: 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
   .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
   .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
   .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -218,7 +218,7 @@
     .game-head, .game-actions { gap: 0.4rem; }
     .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
   }
-  .site-back.gh-col { padding-left: 0; padding-right: 0; }
+  /* ===== 共通ここまで ===== */
 </style>
 </head>
 <body>
@@ -254,7 +254,7 @@
   </div>
   <p id="msg" class="msg" aria-live="polite"></p>
   <div id="board" class="board" role="grid" aria-label="盤面"></div>
-  <!-- 対局後の「新しいゲーム」(スマホで上に戻らずに始められるように。SD-020) -->
+  <!-- 対局後の「新しいゲーム」(スマホで上に戻らずに始められるように) -->
   <div class="controls" id="gameOver" hidden>
     <button id="btnNew2" type="button" class="gbtn gbtn-primary">新しいゲーム (N)</button>
   </div>
@@ -271,8 +271,8 @@
 const CONFIG = {
   slug: "reversi",
   version: "0.1",
-  storageKey: "wktks.game.reversi", // shared-decisions.md SD-008
-  license: "MIT-0", // shared-decisions.md SD-007
+  storageKey: "wktks.game.reversi",
+  license: "MIT-0",
   cpuDelayMs: 600,       // CPUの手番の間(目で追える程度)
   endgameEmpties: 12,    // 残り空マスがこれ以下なら「最多反転」に切替
   maxHistory: 200,       // 保存データの履歴上限(異常データ対策)
@@ -337,7 +337,7 @@ const content = {
   }
 };
 
-/* ---------- rng: シード付き疑似乱数(SD-004: 状態にはシードのみ保存) ---------- */
+/* ---------- rng: シード付き疑似乱数(状態にはシードのみ保存) ---------- */
 const rng = {
   // シードと決定的な整数(手数など)を混ぜて 32bit 整数にする
   mix(seed, n) {
@@ -526,7 +526,7 @@ const ai = {
 <script id="app">
 "use strict";
 
-/* ---------- storage: localStorage のみ。読込時は必ず検証(template-guideline §4) ---------- */
+/* ---------- storage: localStorage のみ。読込時は必ず検証 ---------- */
 const storage = {
   isInt(v, min, max) { return Number.isInteger(v) && v >= min && v <= max; },
 

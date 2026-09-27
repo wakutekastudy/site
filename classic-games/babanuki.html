@@ -1,19 +1,19 @@
 <!--
   ============================================================
-  わくてかスタディ研究所 ひな型: ババ抜き
+  わくてかスタディ研究所 定番ゲーム: ババ抜き
   ============================================================
   ゲーム名      : ババ抜き / babanuki
   版            : 0.2
-  最終更新日    : 2026-09-23(SD-004/007/008/009の反映。v0.2: 親のランダム化・引かれる手札のシャッフル、SD-013) / 2026-09-27(暖色の配色、4本共通のボタン名・キー操作 N/R/Esc・ルール欄・ファビコン) / 2026-09-28(見出し・タイトル・ボタンの統一)
-  ライセンス    : MIT-0(shared-decisions.md SD-007で決定)
-  配置パス      : classic-games/babanuki.html(shared-decisions.md SD-004)
+  最終更新日    : 2026-09-28
+  ライセンス    : MIT-0(リポジトリの LICENSE を参照)
+  配置パス      : classic-games/babanuki.html
 
-  [3軸チェック結果] (shared-decisions.md SD-001)
-    ① メカニクス : 伝統的トランプゲーム。SD-001 の例示で「一般に安全側」に含まれる → 問題なし
+  [題材の確認(ルール・名称・見た目の3点)]
+    ① メカニクス : 伝統的トランプゲームで、特定企業の権利主張はない → 問題なし
     ② 名称       : 「ババ抜き」は一般名称(特定企業の商標ではない) → 問題なし。英語スラッグは babanuki
     ③ 表現       : カードは Unicode のスート記号 + 数字のみの独自描画。既存製品のデザインを流用しない → 問題なし
 
-  [採用ルール] (運営者確認済み・2026-09-23。shared-decisions.md SD-013)
+  [採用ルール] (2026-09-23 確定。v0.2 で親をランダムに決め、引かれる手札を毎回混ぜるよう変更)
     - 4人 (人間1 + CPU3)、52枚 + ジョーカー1枚
     - 配り始めの人(親)を毎ゲームシード付き乱数で決め、親から順に全カードを配る(親が1枚多い14枚)。先手は親
       (固定席から配ると1枚多い席の負け率が約26%になるため。20万回シミュレーションで確認)
@@ -32,7 +32,7 @@
     - storage (localStorage 読み書き + rules.validateState によるスキーマ検証。壊れていれば null)
     - CONFIG (仮の値を1か所に集約)、ui の裏向き札選択(ボタン列 + 矢印キーの巡回選択)
 
-  [転用メモ] (template-guideline.md 第7章)
+  [転用メモ]
     1. 仕組みの核: 「相手の伏せた手札から1枚引き、同じ値と組になったら捨てる。最後まで組にならない1枚(ジョーカー)を持っていた人が負け」
     2. 転用アイディア:
        - 数字を「用語」、同ランクの組を「用語と定義」に置き換え、引いた札の定義を持っていればペアで捨てる(用語カード合わせ)
@@ -56,14 +56,14 @@
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <style>
-  /* handoff-brief.md 第5章のデザイントークン */
+  /* デザイントークン(サイト共通の暖色) */
   :root {
     --ink: #3B2416;
     --ink-soft: #6E5443;
     --paper: #FFF8EE;
     --paper-warm: #FFEBD2;
     --spark: #E8792B; /* 強調の枠線・印(文字色には使わない) */
-    --coral: #1D6480; /* 引く相手の枠線(白い枠の上だけで使う。SD-015) */
+    --coral: #1D6480; /* 引く相手の枠線(水色系は白い枠の上だけで使う) */
     /* 赤スートの文字色(白 5.98:1 / --paper 5.67:1) */
     --coral-text: #B8321F;
     --bg: var(--paper);
@@ -148,12 +148,8 @@
   .log { font-size: .85rem; color: var(--muted); max-height: 7em; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
   .log p { margin: 0; }
   /* サイト内の戻り導線(公開プラットフォーム側で追加) */
-  /* 4本共通(SD-020 案①):ページ最上部の戻りリンク。位置・余白・区切り線をそろえる */
-  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin: 0 0 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
   body > .site-back { margin: -0.5rem 0 0.5rem; padding-left: 0; padding-right: 0; } /* body の上の余白を打ち消し、ほかの3本と同じ高さにする */
-  .site-back a { color: inherit; text-underline-offset: 0.2em; }
-  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
-  /* ===== 4本共通:見出し・タイトル・ボタン(SD-020。4本とも同じ内容。--gh-width だけゲームごとに変える) ===== */
+  /* ===== 共通ここから:戻りリンク・見出し・タイトル・ボタン(全ゲームで同じ内容。変えてよいのは --gh-width の値だけ。正本は _dev/game-template.html) ===== */
   :root {
     --gh-width: 960px;           /* ゲーム本体の幅。戻りリンクと見出しをこの幅にそろえる */
     --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
@@ -164,6 +160,10 @@
   }
   [hidden] { display: none !important; }
   .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin-top: 0; margin-bottom: 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+  .site-back.gh-col { padding-left: 0; padding-right: 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
   .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
   .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
   .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -174,6 +174,7 @@
     .game-head, .game-actions { gap: 0.4rem; }
     .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
   }
+  /* ===== 共通ここまで ===== */
 </style>
 </head>
 <body>
@@ -218,10 +219,10 @@
 const CONFIG = Object.freeze({
   gameId: 'babanuki',
   schemaVersion: 2,                    // v0.2で state に dealer を追加。旧保存データは破棄して新規開始
-  storagePrefix: 'wktks.',             // shared-decisions.md SD-008
+  storagePrefix: 'wktks.',
   storageKey: 'wktks.game.babanuki',   // = storagePrefix + 'game.' + gameId
-  deployPath: '/classic-games/babanuki.html', // shared-decisions.md SD-004
-  license: 'MIT-0',                     // shared-decisions.md SD-007
+  deployPath: '/classic-games/babanuki.html',
+  license: 'MIT-0',
   maxLogLines: 200,                    // 仮 表示ログの上限(フリーズ防止)
   playerCount: 4,                     // 仮 (人間1 + CPU3)
   jokerCount: 1,                      // 仮
@@ -796,7 +797,7 @@ const storage = (() => {
     btns[selected].focus();
   }
 
-  // ルールは画面内で開閉する(最初は閉じている)。4本共通の操作: N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる
+  // ルールは画面内で開閉する(最初は閉じている)。全ゲーム共通の操作: N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる
   function toggleRules(force) {
     const open = force === undefined ? el.rulesPanel.hidden : force;
     el.rulesPanel.hidden = !open;
