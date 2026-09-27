@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<!--
+  ============================================================
+  わくてかスタディ研究所 定番ゲーム: シューティング
+  ============================================================
+  ゲーム名      : シューティング / shooting
+  版            : 0.1
+  最終更新日    : 2026-09-28
+  ライセンス    : MIT-0(リポジトリの LICENSE を参照)
+  題材の確認    : ①ルール:縦スクロールのシューティングは広く遊ばれている一般的な形式で、特定企業の権利主張はない
+                  ②名称:一般名称「シューティング」のみを使う ③見た目:敵・自機は独自の単純な図形(菱形・三角形・六角形)
+  ------------------------------------------------------------
+  採用ルール
+    - 縦スクロール・1人プレイ。矢印キー / ドラッグで自機を移動、弾は自動連射
+    - 残機3。被弾で1減、0でゲームオーバー。被弾後90ティックは無敵
+    - 敵3種:A(菱形)左右に揺れて降下 / B(逆三角形)直進し自機へ1発ずつ射撃 / C(六角形)緩やかな円運動
+    - 5ウェーブでクリア。ウェーブは「出現予定数を出し切り全滅」または「制限時間経過」で進む
+    - 時間経過で出現間隔と敵弾速が線形にゆるやかに変化(上限あり)
+    - 上限:自機弾50・敵弾50・敵15。超過する生成要求は無視
+    - 撃破で加点(A100/B200/C300)。ハイスコアは localStorage に保存
+    - P / 右上のボタンで一時停止。ルールを開くと一時停止。画面が隠れたら自動一時停止し保存。リロード後は一時停止状態から再開
+    - キー操作:N 新しいゲーム / R ルールの表示・非表示 / Esc ルールを閉じる(全ゲーム共通)
+  ------------------------------------------------------------
+  決定性の実装方式:固定ステップ 1/60 秒
+    - ロジック(rules.apply)は 1 ティック = 1/60 秒で進め、rAF の実経過時間は
+      「何ティック進めるか」の計算にだけ使う。乱数は rng(xorshift32)のみで、内部状態(rngState)を状態に保存する
+  ------------------------------------------------------------
+  流用できる部品
+    - rng(シード付き xorshift32、状態を state に保存)、円どうしの当たり判定、
+      固定ステップのゲームループ、論理座標 360x640 のスケーリング描画、
+      Web Audio による効果音の都度生成、localStorage の保存・検証
+  ------------------------------------------------------------
+  転用メモ
+    1. 仕組みの核:自機を動かして弾を撃ち、迫る敵を処理する
+    2. 転用アイディア(実装しない):敵に単語・年号・選択肢などを割り当て、
+       「正しい答えの敵だけを撃つ/避ける」形にして、暗記学習・タイピング学習に転用する
+    3. 差し替える箇所:content.enemyTypes(見た目・意味づけ)、
+       rules.onEnemyDestroyed(正誤判定を追加する拡張点)
+  ============================================================
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>シューティング | 定番ゲーム | わくてかスタディ研究所</title>
+<meta name="description" content="シューティングをブラウザで遊べます。自機を動かして、自動で発射される弾で迫る図形の敵を倒します。5つのウェーブを乗り切るとクリアです。">
+<meta name="theme-color" content="#FFF8EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#24170F" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<style>
+  /* ===== 共通ここから:戻りリンク・見出し・タイトル・ボタン(全ゲームで同じ内容。変えてよいのは --gh-width の値だけ。正本は _dev/game-template.html) ===== */
+  :root {
+    --gh-width: 32rem;           /* ゲーム本体の幅。戻りリンクと見出しをこの幅にそろえる */
+    --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
+    --gh-cta: #B85215; --gh-cta-fg: #FFFFFF;   /* 白文字 4.93:1 */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --gh-btn-bg: #33231A; --gh-btn-fg: #FFF1E0; --gh-btn-line: #6E5443; --gh-cta: #F29A55; --gh-cta-fg: #24170F; }
+  }
+  [hidden] { display: none !important; }
+  .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin-top: 0; margin-bottom: 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+  .site-back.gh-col { padding-left: 0; padding-right: 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+  .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
+  .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
+  .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  button.gbtn { font: inherit; font-size: 1rem; line-height: 1.2; font-weight: 400; min-height: 2.75rem; padding: 0.5rem 1rem; border-radius: 0.5rem;
+    border: 1px solid var(--gh-btn-line); background: var(--gh-btn-bg); color: var(--gh-btn-fg); cursor: pointer; }
+  button.gbtn.gbtn-primary { background: var(--gh-cta); color: var(--gh-cta-fg); border-color: var(--gh-cta); font-weight: 700; }
+  @media (max-width: 480px) {
+    .game-head, .game-actions { gap: 0.4rem; }
+    .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
+  }
+  /* ===== 共通ここまで ===== */
+
+  /* ===== 標準の部品(ひな型の形。このゲームに合わせて調整) ===== */
+  :root {
+    --ink: #3B2416;
+    --ink-soft: #6E5443;
+    --paper: #FFF8EE;
+    --paper-warm: #FFEBD2;
+    --card: #FFFFFF;
+    --line: #E3CBB0;
+    --focus: var(--ink);
+    /* ゲーム固有:図形の色(文字色には使わない)と盤面 */
+    --orange: #E8792B;
+    --orange-deep: #B85215;
+    --sky: #7EC8E3;
+    --sky-deep: #1D6480;
+    --field: #FFF8EE;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #FFF1E0; --ink-soft: #D9C3AE; --paper: #24170F; --paper-warm: #33231A;
+      --card: #3A281C; --line: #6E5443; --focus: #F29A55;
+      --field: #FFF8EE; }   /* 盤面は明るいままにして、こげ茶の自機と水色の弾を見えるようにする */
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--paper); color: var(--ink); line-height: 1.6;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+    display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow-x: hidden; }   /* 画面の高さに収め、残りをゲーム画面に使う */
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  button.gbtn:disabled { opacity: 0.5; cursor: default; }
+  .rules-panel { background: var(--paper-warm); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+  .rules-panel h2 { font-size: 1.05rem; margin: 0.75rem 0 0.25rem; }
+  .rules-panel h2:first-child { margin-top: 0; }
+  .rules-panel ul { padding-left: 1.2em; margin: 0.25rem 0; }
+  .rules-panel p { margin: 0.25rem 0; }
+  .seed-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+  .seed-form input { font: inherit; padding: 0.4rem 0.5rem; width: 10em; max-width: 100%; border: 1px solid var(--line); border-radius: 0.4rem; background: var(--card); color: var(--ink); }
+  .message { min-height: 1.6em; margin: 0 auto 0.25rem; font-size: 0.9rem; }
+
+  /* ===== ゲーム固有のスタイル ===== */
+  .stats { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; margin: 0 auto 0.4rem; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  .stats b { font-weight: 700; }
+  main { flex: 1 1 0; width: 100%; display: flex; align-items: center; justify-content: center; position: relative; min-height: 14rem; overflow: hidden; padding-bottom: 0.75rem; touch-action: none; }
+  #field { display: block; background: var(--field); box-shadow: 0 0 0 1px var(--line); border-radius: 0.25rem; }
+  #field:focus-visible { outline-offset: -3px; }
+  #overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .overlay-panel { pointer-events: auto; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 0.6rem;
+    padding: 1.1rem 1.25rem; max-width: 20rem; width: calc(100% - 2rem); text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,0.12); }
+  .overlay-panel h2 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; margin: 0 0 0.5rem; font-size: 1.3rem; }
+  .overlay-panel p { margin: 0.3rem 0; color: var(--ink-soft); font-size: 0.95rem; }
+  .overlay-panel .big { font-size: 1.4rem; color: var(--ink); font-weight: 700; }
+  .row { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; margin-top: 0.8rem; }
+  .field-wrap { position: relative; }   /* 一時停止ボタンをゲーム画面の右上に置くため */
+  #pauseBtn { position: absolute; top: 0.5rem; right: 0.5rem; width: 2.75rem; min-width: 2.75rem; height: 2.75rem; padding: 0; border-radius: 50%;
+    font-size: 1.1rem; line-height: 1; }
+  .legend { display: flex; gap: 0.6rem; align-items: center; margin: 0.3rem 0; }
+  .legend svg { width: 1.3rem; height: 1.3rem; flex-shrink: 0; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<nav class="site-back gh-col" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
+<header class="game-head gh-col">
+  <h1 id="title"></h1>
+  <div class="game-actions">
+    <button type="button" id="btn-rules" class="gbtn" aria-expanded="false" aria-controls="rules"></button>
+    <button type="button" id="btn-new" class="gbtn gbtn-primary"></button>
+  </div>
+</header>
+<section id="rules" class="rules-panel gh-col" hidden aria-labelledby="rules-title">
+  <h2 id="rules-title"></h2>
+  <ul id="rules-list"></ul>
+  <h2 id="enemies-title"></h2>
+  <div id="legend"></div>
+  <h2 id="keys-title"></h2>
+  <ul id="keys-list"></ul>
+  <h2 id="seed-title"></h2>
+  <p id="seed-current"></p>
+  <p id="seed-desc"></p>
+  <div class="seed-form">
+    <label for="seed-input" id="seed-label"></label>
+    <input id="seed-input" type="text" inputmode="numeric" autocomplete="off">
+    <button type="button" id="btn-seed" class="gbtn"></button>
+  </div>
+</section>
+<p id="message" class="message gh-col" role="status" aria-live="polite"></p>
+<div class="stats gh-col" aria-label="スコア表示">
+  <span><span id="lblScore"></span> <b id="score">0</b></span>
+  <span><span id="lblLives"></span> <b id="lives">3</b></span>
+  <span><span id="lblWave"></span> <b id="wave">1</b>/5</span>
+  <span><span id="lblHigh"></span> <b id="high">0</b></span>
+</div>
+<main id="main">
+  <div class="field-wrap">
+    <canvas id="field" width="360" height="640" aria-label="ゲーム画面"></canvas>
+    <button id="pauseBtn" type="button" class="gbtn" hidden aria-pressed="false"></button>
+  </div>
+  <div id="overlay">
+    <div class="overlay-panel" id="panel" role="dialog" aria-modal="false"></div>
+  </div>
+</main>
+<div id="live" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+
+<script>
+"use strict";
+
+/* ============================================================
+ * content:差し替え可能なデータ(敵定義・UI文言・難易度)。DOM非依存
+ * ============================================================ */
+const content = {
+  schemaVersion: 1,
+  field: { w: 360, h: 640 },
+  limits: { playerBullets: 50, enemyBullets: 50, enemies: 15 },
+  player: {
+    size: 14,          // 正三角形の外接円半径
+    hitRadius: 9,
+    speed: 4,          // 1ティックあたりの移動量
+    fireInterval: 8,   // 自動連射の間隔(ティック)
+    bulletSpeed: 8,
+    bulletRadius: 3,
+    lives: 3,
+    invincibleTicks: 90,
+    flashTicks: 12     // 0.2秒 ≒ 12ティック
+  },
+  enemyTypes: {
+    // 意味づけ(学習転用時はここに単語・年号などを追加する)
+    A: { shape: "diamond",  color: "orange",     size: 14, hitRadius: 12, hp: 1, score: 100, speed: 1.4, swayAmp: 60, swayPeriod: 120 },
+    B: { shape: "triDown",  color: "orangeDeep", size: 15, hitRadius: 12, hp: 2, score: 200, speed: 1.0, fireMin: 80, fireMax: 140, bulletSpeed: 3.0 },
+    C: { shape: "hexagon",  color: "skyDeep",    size: 15, hitRadius: 13, hp: 3, score: 300, speed: 0.5, orbitR: 45, orbitPeriod: 240 }
+  },
+  enemyBulletRadius: 3,
+  waves: [
+    // quota:このウェーブで出す敵の総数 / weights:種類の出現比 / interval:基準の出現間隔(ティック) / limit:制限時間(ティック)
+    { quota: 10, weights: { A: 1, B: 0, C: 0 }, interval: 60, limit: 60 * 40 },
+    { quota: 14, weights: { A: 2, B: 1, C: 0 }, interval: 55, limit: 60 * 45 },
+    { quota: 18, weights: { A: 2, B: 2, C: 1 }, interval: 50, limit: 60 * 50 },
+    { quota: 22, weights: { A: 2, B: 2, C: 2 }, interval: 45, limit: 60 * 55 },
+    { quota: 26, weights: { A: 1, B: 2, C: 2 }, interval: 40, limit: 60 * 60 }
+  ],
+  difficulty: {
+    // 経過フレームに比例して線形に変化させる。rampTicks で最大に達し、それ以上は上げない
+    rampTicks: 60 * 180,
+    intervalMinRatio: 0.55,
+    bulletSpeedMaxRatio: 1.6
+  },
+  scoreMilestone: 1000,
+  text: {
+    title: "シューティング",
+    score: "スコア",
+    lives: "残機",
+    wave: "ウェーブ",
+    high: "最高",
+    rulesButton: "ルール (R)",
+    newGame: "新しいゲーム (N)",
+    start: "はじめる",
+    resume: "つづける",
+    pause: "一時停止",
+    paused: "一時停止中",
+    resumeHint: "Enter または「つづける」で再開",
+    startHint: "Enter または「はじめる」で開始",
+    gameOver: "ゲームオーバー",
+    clear: "クリア",
+    clearMsg: "5つのウェーブをすべて乗り切りました",
+    finalScore: "スコア",
+    newHigh: "最高記録を更新",
+    newGameStarted: (seed) => `新しいゲームを始めました（シード ${seed}）。`,
+    restored: "中断したゲームを再開しました。",
+    corrupted: "保存データを読み込めなかったため、新しいゲームを始めました。",
+    waveStart: (n) => `ウェーブ ${n} 開始`,
+    gameStart: "ゲーム開始",
+    scoreMilestone: (s) => `スコア ${s} 点`,
+    rulesTitle: "ルール",
+    rules: [
+      "自機（上向きの三角形）を動かし、自動で発射される弾で敵を倒します。",
+      "残機は3。敵や敵弾に触れると1減り、0でゲームオーバーです。",
+      "5つのウェーブをすべて終えるとクリアです。",
+      "ルールを開くと、ゲームは一時停止します。"
+    ],
+    enemiesTitle: "敵の種類",
+    enemyA: "菱形：左右に揺れながら降下（100点）",
+    enemyB: "下向きの三角形：直進し、弾を撃つ（200点）",
+    enemyC: "六角形：ゆっくり円を描いて動く（300点）",
+    keysTitle: "キーボード操作",
+    keys: [
+      "← → ↑ ↓: 自機を移動（画面のドラッグでも移動できます）",
+      "Enter: 開始・再開",
+      "P: 一時停止の切り替え（右上のボタンでも切り替えられます）",
+      "N: 新しいゲーム",
+      "R: ルールの表示/非表示",
+      "Esc: ルールを閉じる",
+      "弾は自動で連射されます（発射ボタンはありません）"
+    ],
+    seedTitle: "シード",
+    seedCurrent: (seed) => `現在のシード: ${seed}`,
+    seedDesc: "同じシードで同じ操作をすると、同じ展開になります。",
+    seedLabel: "シード（整数）",
+    seedButton: "このシードで新しいゲーム",
+    seedInvalid: "シードには0以上の整数を入れてください。"
+  }
+};
+
+/* ============================================================
+ * rng:シード付き疑似乱数(xorshift32)。DOM非依存
+ *   内部状態(rngState)を state に保存する(同じシードと同じ操作で同じ展開にするため)
+ * ============================================================ */
+const rng = {
+  // 0 を避ける(xorshift は 0 から動かないため)
+  init(seed) {
+    let s = (seed >>> 0) || 0x9E3779B9;
+    return s;
+  },
+  next(s) {
+    s ^= s << 13; s >>>= 0;
+    s ^= s >>> 17;
+    s ^= s << 5;  s >>>= 0;
+    return s || 1;
+  },
+  // 状態を進め、[0,1) の値と新しい状態を返す
+  float(s) {
+    const n = rng.next(s);
+    return { value: n / 4294967296, state: n };
+  },
+  // [min, max] の整数
+  int(s, min, max) {
+    const r = rng.float(s);
+    return { value: min + Math.floor(r.value * (max - min + 1)), state: r.state };
+  },
+  // 重み付きで key を選ぶ
+  pick(s, weights) {
+    const keys = Object.keys(weights);
+    let total = 0;
+    for (const k of keys) total += weights[k];
+    const r = rng.float(s);
+    let acc = 0;
+    for (const k of keys) {
+      acc += weights[k];
+      if (r.value * total < acc) return { value: k, state: r.state };
+    }
+    return { value: keys[keys.length - 1], state: r.state };
+  }
+};
+
+/* ============================================================
+ * ai:敵ごとの移動パターン・攻撃タイミングの決定。DOM非依存
+ *   rules から渡された情報(自機位置・経過ティック・敵の内部値)だけを見る
+ * ============================================================ */
+const ai = {
+  // 敵の次の位置を返す。当たり判定はしない
+  move(enemy, def) {
+    const t = enemy.age;
+    switch (enemy.type) {
+      case "A": {
+        // 基準線 baseX を中心に左右へ揺れながら降下
+        const x = enemy.baseX + Math.sin((t / def.swayPeriod) * Math.PI * 2 + enemy.phase) * def.swayAmp;
+        return { x, y: enemy.y + def.speed };
+      }
+      case "B":
+        return { x: enemy.x, y: enemy.y + def.speed };
+      case "C": {
+        // 中心がゆっくり降下し、その周りを円運動
+        const cy = enemy.baseY + t * def.speed;
+        const a = (t / def.orbitPeriod) * Math.PI * 2 + enemy.phase;
+        return { x: enemy.baseX + Math.cos(a) * def.orbitR, y: cy + Math.sin(a) * def.orbitR };
+      }
+      default:
+        return { x: enemy.x, y: enemy.y + 1 };
+    }
+  },
+  // 撃つべきなら発射方向(単位ベクトル)を返す。撃たないなら null
+  fire(enemy, def, player) {
+    if (enemy.type !== "B") return null;
+    if (enemy.age < enemy.nextFire) return null;
+    if (enemy.y < 0 || enemy.y > player.y - 40) return null; // 自機より下からは撃たない
+    const dx = player.x - enemy.x;
+    const dy = player.y - enemy.y;
+    const len = Math.hypot(dx, dy) || 1;
+    return { dx: dx / len, dy: dy / len };
+  }
+};
+
+/* ============================================================
+ * rules:状態遷移。DOM非依存。apply(state, action) は新しい状態を返す
+ * ============================================================ */
+const rules = {
+  newGame(seed) {
+    const f = content.field;
+    return {
+      schemaVersion: content.schemaVersion,
+      rngSeed: seed >>> 0,
+      rngState: rng.init(seed),
+      frame: 0,
+      wave: 1,
+      waveFrame: 0,
+      waveSpawned: 0,
+      spawnCooldown: 60,
+      phase: "title",          // title | playing | gameover | clear
+      paused: false,
+      player: { x: f.w / 2, y: f.h - 80, lives: content.player.lives, invincible: 0, flash: 0, fireCooldown: 0 },
+      bullets: [],             // 自機弾 {x,y,vx,vy}
+      enemyBullets: [],        // 敵弾 {x,y,vx,vy}
+      enemies: [],             // {id,type,x,y,hp,age,baseX,baseY,phase,nextFire}
+      effects: [],             // 撃破リング {x,y,age,color}(見た目のみ、判定に使わない)
+      nextId: 1,
+      score: 0,
+      highScore: 0,
+      events: []               // 直前の apply で起きたこと(音・通知用)。毎ティック作り直す
+    };
+  },
+
+  apply(state, action) {
+    switch (action.type) {
+      case "start": {
+        const s = rules.newGame(action.seed);
+        s.highScore = state.highScore;
+        s.phase = "playing";
+        s.events = [{ kind: "gameStart" }, { kind: "waveStart", wave: 1 }];
+        return s;
+      }
+      case "pause":
+        if (state.phase !== "playing" || state.paused) return state;
+        return { ...state, paused: true, events: [] };
+      case "resume":
+        if (state.phase !== "playing" || !state.paused) return state;
+        return { ...state, paused: false, events: [] };
+      case "tick":
+        if (state.phase !== "playing" || state.paused) return state;
+        return rules.tick(state, action.input || { dx: 0, dy: 0 });
+      default:
+        return state;
+    }
+  },
+
+  // 1/60 秒ぶんロジックを進める。input = { dx, dy }(論理座標での自機の移動量)
+  tick(prev, input) {
+    const f = content.field;
+    const P = content.player;
+    const s = { ...prev, events: [] };
+    let r = s.rngState;
+    s.frame = prev.frame + 1;
+    s.waveFrame = prev.waveFrame + 1;
+
+    /* --- 自機 --- */
+    const pl = { ...prev.player };
+    pl.x = Math.max(P.size, Math.min(f.w - P.size, pl.x + Math.max(-P.speed * 3, Math.min(P.speed * 3, input.dx))));
+    pl.y = Math.max(f.h * 0.5, Math.min(f.h - P.size, pl.y + Math.max(-P.speed * 3, Math.min(P.speed * 3, input.dy))));
+    if (pl.invincible > 0) pl.invincible--;
+    if (pl.flash > 0) pl.flash--;
+    pl.fireCooldown--;
+    let bullets = prev.bullets.slice();
+    if (pl.fireCooldown <= 0) {
+      pl.fireCooldown = P.fireInterval;
+      if (bullets.length < content.limits.playerBullets) {
+        bullets.push({ x: pl.x, y: pl.y - P.size, vx: 0, vy: -P.bulletSpeed });
+        s.events.push({ kind: "shot" });
+      }
+    }
+
+    /* --- 難易度(経過フレームに線形) --- */
+    const D = content.difficulty;
+    const ramp = Math.min(1, s.frame / D.rampTicks);
+    const intervalRatio = 1 - (1 - D.intervalMinRatio) * ramp;
+    const bulletSpeedRatio = 1 + (D.bulletSpeedMaxRatio - 1) * ramp;
+
+    /* --- 敵の出現 --- */
+    const waveDef = content.waves[s.wave - 1];
+    let enemies = prev.enemies.map(e => ({ ...e }));
+    s.spawnCooldown = prev.spawnCooldown - 1;
+    if (s.spawnCooldown <= 0 && s.waveSpawned < waveDef.quota) {
+      s.spawnCooldown = Math.max(12, Math.round(waveDef.interval * intervalRatio));
+      if (enemies.length < content.limits.enemies) {
+        const pick = rng.pick(r, waveDef.weights); r = pick.state;
+        const def = content.enemyTypes[pick.value];
+        const xr = rng.int(r, 40, f.w - 40); r = xr.state;
+        const ph = rng.float(r); r = ph.state;
+        const e = {
+          id: s.nextId++, type: pick.value, x: xr.value, y: -def.size - 4, hp: def.hp,
+          age: 0, baseX: xr.value, baseY: -def.size - 4, phase: ph.value * Math.PI * 2, nextFire: 0
+        };
+        if (e.type === "C") {
+          // 円運動の半径ぶん内側に寄せて、画面外に出続けないようにする
+          e.baseX = Math.max(def.orbitR + 10, Math.min(f.w - def.orbitR - 10, e.baseX));
+          e.x = e.baseX;
+        }
+        if (e.type === "B") {
+          const nf = rng.int(r, def.fireMin, def.fireMax); r = nf.state;
+          e.nextFire = nf.value;
+        }
+        enemies.push(e);
+        s.waveSpawned = prev.waveSpawned + 1;
+      }
+    }
+
+    /* --- 敵の移動・射撃(ai) --- */
+    let enemyBullets = prev.enemyBullets.slice();
+    for (const e of enemies) {
+      e.age++;
+      const def = content.enemyTypes[e.type];
+      const p = ai.move(e, def);
+      e.x = p.x; e.y = p.y;
+      const dir = ai.fire(e, def, pl);
+      if (dir) {
+        const nf = rng.int(r, def.fireMin, def.fireMax); r = nf.state;
+        e.nextFire = e.age + nf.value;
+        if (enemyBullets.length < content.limits.enemyBullets) {
+          const sp = def.bulletSpeed * bulletSpeedRatio;
+          enemyBullets.push({ x: e.x, y: e.y + def.size, vx: dir.dx * sp, vy: dir.dy * sp });
+        }
+      }
+    }
+    enemies = enemies.filter(e => e.y < f.h + 40 && e.x > -80 && e.x < f.w + 80);
+
+    /* --- 弾の移動 --- */
+    bullets = bullets.map(b => ({ ...b, x: b.x + b.vx, y: b.y + b.vy })).filter(b => b.y > -10);
+    enemyBullets = enemyBullets.map(b => ({ ...b, x: b.x + b.vx, y: b.y + b.vy }))
+      .filter(b => b.y > -10 && b.y < f.h + 10 && b.x > -10 && b.x < f.w + 10);
+
+    /* --- 当たり判定:自機弾 × 敵 --- */
+    let effects = prev.effects.map(x => ({ ...x, age: x.age + 1 })).filter(x => x.age < 18);
+    let score = prev.score;
+    const usedBullets = new Set();
+    for (const e of enemies) {
+      const def = content.enemyTypes[e.type];
+      for (let i = 0; i < bullets.length; i++) {
+        if (usedBullets.has(i)) continue;
+        if (rules.hitCircle(bullets[i].x, bullets[i].y, P.bulletRadius, e.x, e.y, def.hitRadius)) {
+          usedBullets.add(i);
+          e.hp--;
+          if (e.hp <= 0) break;
+        }
+      }
+    }
+    bullets = bullets.filter((_, i) => !usedBullets.has(i));
+    const survivors = [];
+    for (const e of enemies) {
+      if (e.hp <= 0) {
+        const def = content.enemyTypes[e.type];
+        score += rules.onEnemyDestroyed(e, def);
+        if (effects.length < 30) effects.push({ x: e.x, y: e.y, age: 0, color: def.color });
+        s.events.push({ kind: "destroy" });
+      } else {
+        survivors.push(e);
+      }
+    }
+    enemies = survivors;
+    if (Math.floor(score / content.scoreMilestone) > Math.floor(prev.score / content.scoreMilestone)) {
+      s.events.push({ kind: "milestone", score: Math.floor(score / content.scoreMilestone) * content.scoreMilestone });
+    }
+
+    /* --- 当たり判定:自機 × 敵弾・敵 --- */
+    if (pl.invincible <= 0) {
+      let hit = false;
+      for (const b of enemyBullets) {
+        if (rules.hitCircle(b.x, b.y, content.enemyBulletRadius, pl.x, pl.y, P.hitRadius)) { hit = true; break; }
+      }
+      if (!hit) {
+        for (const e of enemies) {
+          const def = content.enemyTypes[e.type];
+          if (rules.hitCircle(e.x, e.y, def.hitRadius, pl.x, pl.y, P.hitRadius)) { hit = true; break; }
+        }
+      }
+      if (hit) {
+        pl.lives--;
+        pl.invincible = P.invincibleTicks;
+        pl.flash = P.flashTicks;
+        enemyBullets = []; // 被弾直後の連続被弾を避ける
+        s.events.push({ kind: "hit" });
+      }
+    }
+
+    s.player = pl;
+    s.bullets = bullets;
+    s.enemyBullets = enemyBullets;
+    s.enemies = enemies;
+    s.effects = effects;
+    s.score = score;
+    s.highScore = Math.max(prev.highScore, score);
+    s.rngState = r;
+
+    /* --- 終了判定 --- */
+    if (pl.lives <= 0) {
+      s.phase = "gameover";
+      s.events.push({ kind: "gameOver" });
+      return s;
+    }
+
+    /* --- ウェーブ進行:出し切って全滅、または制限時間 --- */
+    const exhausted = s.waveSpawned >= waveDef.quota && enemies.length === 0;
+    if (exhausted || s.waveFrame >= waveDef.limit) {
+      if (s.wave >= content.waves.length) {
+        s.phase = "clear";
+        s.events.push({ kind: "clear" });
+      } else {
+        s.wave = prev.wave + 1;
+        s.waveFrame = 0;
+        s.waveSpawned = 0;
+        s.spawnCooldown = 60;
+        s.events.push({ kind: "waveStart", wave: s.wave });
+      }
+    }
+    return s;
+  },
+
+  hitCircle(x1, y1, r1, x2, y2, r2) {
+    const dx = x1 - x2, dy = y1 - y2, rr = r1 + r2;
+    return dx * dx + dy * dy <= rr * rr;
+  },
+
+  // 拡張点:学習転用時はここで「正しい答えの敵か」を判定して加点/減点を分ける
+  onEnemyDestroyed(enemy, def) {
+    return def.score;
+  }
+};
+
+/* ============================================================
+ * storage:localStorage の保存・読込・検証
+ * ============================================================ */
+const storage = {
+  key: "wktks.game.shooting",
+
+  save(state) {
+    // ゲームオーバー・クリア・タイトルでは中断データを残さない(ハイスコアのみ)
+    const resumable = state.phase === "playing";
+    const payload = {
+      schemaVersion: content.schemaVersion,
+      highScore: state.highScore,
+      save: resumable ? { ...state, paused: true, events: [] } : null
+    };
+    try { localStorage.setItem(storage.key, JSON.stringify(payload)); } catch (e) { /* 容量超過・プライベートモード等は無視 */ }
+  },
+
+  // 戻り値:{ highScore, save, corrupted }
+  load() {
+    let raw = null;
+    try { raw = localStorage.getItem(storage.key); } catch (e) { return { highScore: 0, save: null, corrupted: false }; }
+    if (raw === null) return { highScore: 0, save: null, corrupted: false };
+    let data;
+    try { data = JSON.parse(raw); } catch (e) { return { highScore: 0, save: null, corrupted: true }; }
+    if (!storage.isObject(data) || data.schemaVersion !== content.schemaVersion) {
+      return { highScore: 0, save: null, corrupted: true };
+    }
+    const highScore = storage.isInt(data.highScore, 0, 99999999) ? data.highScore : 0;
+    if (data.save === null || data.save === undefined) return { highScore, save: null, corrupted: false };
+    const save = storage.validateState(data.save);
+    return { highScore, save, corrupted: save === null };
+  },
+
+  clearSave(highScore) {
+    try {
+      localStorage.setItem(storage.key, JSON.stringify({ schemaVersion: content.schemaVersion, highScore, save: null }));
+    } catch (e) { /* 無視 */ }
+  },
+
+  isObject(v) { return v !== null && typeof v === "object" && !Array.isArray(v); },
+  isInt(v, min, max) { return Number.isInteger(v) && v >= min && v <= max; },
+  isNum(v, min, max) { return typeof v === "number" && Number.isFinite(v) && v >= min && v <= max; },
+
+  // 壊れたデータでフリーズ・クラッシュしないよう、上限と型をすべて確認する。未知フィールドは捨てる
+  validateState(v) {
+    const f = content.field;
+    if (!storage.isObject(v)) return null;
+    if (v.schemaVersion !== content.schemaVersion) return null;
+    if (!storage.isInt(v.rngSeed, 0, 4294967295)) return null;
+    if (!storage.isInt(v.rngState, 1, 4294967295)) return null;
+    if (!storage.isInt(v.frame, 0, 1e9)) return null;
+    if (!storage.isInt(v.wave, 1, content.waves.length)) return null;
+    if (!storage.isInt(v.waveFrame, 0, 1e9)) return null;
+    if (!storage.isInt(v.waveSpawned, 0, 1000)) return null;
+    if (!storage.isInt(v.spawnCooldown, -1000, 100000)) return null;
+    if (v.phase !== "playing") return null;
+    if (!storage.isInt(v.nextId, 1, 1e9)) return null;
+    if (!storage.isInt(v.score, 0, 99999999)) return null;
+    if (!storage.isInt(v.highScore, 0, 99999999)) return null;
+    const p = v.player;
+    if (!storage.isObject(p)) return null;
+    if (!storage.isNum(p.x, 0, f.w) || !storage.isNum(p.y, 0, f.h)) return null;
+    if (!storage.isInt(p.lives, 1, content.player.lives)) return null;
+    if (!storage.isInt(p.invincible, 0, 1000) || !storage.isInt(p.flash, 0, 1000) || !storage.isInt(p.fireCooldown, -1000, 1000)) return null;
+    const bullet = (b) => storage.isObject(b) && storage.isNum(b.x, -100, f.w + 100) && storage.isNum(b.y, -100, f.h + 100)
+      && storage.isNum(b.vx, -50, 50) && storage.isNum(b.vy, -50, 50);
+    if (!Array.isArray(v.bullets) || v.bullets.length > content.limits.playerBullets || !v.bullets.every(bullet)) return null;
+    if (!Array.isArray(v.enemyBullets) || v.enemyBullets.length > content.limits.enemyBullets || !v.enemyBullets.every(bullet)) return null;
+    const enemy = (e) => storage.isObject(e) && storage.isInt(e.id, 1, 1e9) && Object.prototype.hasOwnProperty.call(content.enemyTypes, e.type)
+      && storage.isNum(e.x, -200, f.w + 200) && storage.isNum(e.y, -200, f.h + 200)
+      && storage.isInt(e.hp, 1, 99) && storage.isInt(e.age, 0, 1e9)
+      && storage.isNum(e.baseX, -200, f.w + 200) && storage.isNum(e.baseY, -200, f.h + 200)
+      && storage.isNum(e.phase, -100, 100) && storage.isInt(e.nextFire, 0, 1e9);
+    if (!Array.isArray(v.enemies) || v.enemies.length > content.limits.enemies || !v.enemies.every(enemy)) return null;
+    return {
+      schemaVersion: v.schemaVersion,
+      rngSeed: v.rngSeed, rngState: v.rngState,
+      frame: v.frame, wave: v.wave, waveFrame: v.waveFrame, waveSpawned: v.waveSpawned, spawnCooldown: v.spawnCooldown,
+      phase: "playing", paused: true,
+      player: { x: p.x, y: p.y, lives: p.lives, invincible: p.invincible, flash: p.flash, fireCooldown: p.fireCooldown },
+      bullets: v.bullets.map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy })),
+      enemyBullets: v.enemyBullets.map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy })),
+      enemies: v.enemies.map(e => ({ id: e.id, type: e.type, x: e.x, y: e.y, hp: e.hp, age: e.age, baseX: e.baseX, baseY: e.baseY, phase: e.phase, nextFire: e.nextFire })),
+      effects: [],
+      nextId: v.nextId, score: v.score, highScore: v.highScore, events: []
+    };
+  }
+};
+
+/* ============================================================
+ * ui:描画・入力・ループ。DOM に依存するのはここだけ
+ * ============================================================ */
+const ui = (() => {
+  const T = content.text;
+  const F = content.field;
+  const STEP = 1000 / 60;
+  const MAX_STEPS = 5;        // タブ復帰時などに一気に進みすぎないための上限
+
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("field");
+  const ctx = canvas.getContext("2d");
+  const overlay = $("overlay");
+  const panel = $("panel");
+  const pauseBtn = $("pauseBtn");
+  const live = $("live");
+
+  let state;
+  let scale = 1;
+  let acc = 0;
+  let lastTs = null;
+  let rafId = null;
+  let liveTimer = 0;
+
+  // 入力:キーの押下状態とドラッグの累積移動量(論理座標)。tick ごとに action にまとめて rules へ渡す
+  const keys = { left: false, right: false, up: false, down: false };
+  let dragDx = 0, dragDy = 0;
+  let pointerId = null, lastPx = 0, lastPy = 0;
+
+  /* ---- 色(CSS 変数を毎フレーム読むのは重いので起動時に解決) ---- */
+  let palette = {};
+  function readPalette() {
+    const cs = getComputedStyle(document.documentElement);
+    palette = {
+      ink: "#3B2416",                            // 盤面は常に紙色なので自機は固定
+      orange: cs.getPropertyValue("--orange").trim() || "#E8792B",
+      orangeDeep: cs.getPropertyValue("--orange-deep").trim() || "#B85215",
+      sky: cs.getPropertyValue("--sky").trim() || "#7EC8E3",
+      skyDeep: cs.getPropertyValue("--sky-deep").trim() || "#1D6480",
+      field: cs.getPropertyValue("--field").trim() || "#FCFAF7"
+    };
+  }
+
+  /* ---- 効果音:OscillatorNode で都度生成(音源ファイルなし) ---- */
+  let audio = null;
+  function ensureAudio() {
+    if (audio) return;
+    try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; }
+  }
+  function beep(freq, dur, type, vol, slideTo) {
+    if (!audio) return;
+    if (audio.state === "suspended") audio.resume();
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, audio.currentTime);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, audio.currentTime + dur);
+    g.gain.setValueAtTime(vol, audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
+    o.connect(g).connect(audio.destination);
+    o.start();
+    o.stop(audio.currentTime + dur);
+  }
+  const sfx = {
+    shot: () => beep(880, 0.05, "square", 0.02, 660),
+    hit: () => beep(220, 0.25, "sawtooth", 0.08, 80),
+    destroy: () => beep(520, 0.12, "triangle", 0.06, 180),
+    gameOver: () => beep(330, 0.8, "sawtooth", 0.08, 60)
+  };
+
+  /* ---- aria-live(節目のみ) ---- */
+  function announce(text) {
+    live.textContent = "";
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(() => { live.textContent = text; }, 50);
+  }
+
+  /* ---- サイズ調整:縦横比を保ち、devicePixelRatio を反映 ---- */
+  function resize() {
+    const main = $("main");
+    const availW = main.clientWidth;
+    const availH = main.clientHeight - 12;   // 下の余白(0.75rem)を除く
+    scale = Math.max(0.1, Math.min(availW / F.w, availH / F.h));
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = `${Math.floor(F.w * scale)}px`;
+    canvas.style.height = `${Math.floor(F.h * scale)}px`;
+    canvas.width = Math.floor(F.w * scale * dpr);
+    canvas.height = Math.floor(F.h * scale * dpr);
+    draw();
+  }
+
+  /* ---- 描画 ---- */
+  function poly(x, y, r, n, rot) {
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const a = rot + (i / n) * Math.PI * 2;
+      const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  function circle(x, y, r) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  function draw() {
+    if (!state) return;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+    ctx.fillStyle = palette.field;
+    ctx.fillRect(0, 0, F.w, F.h);
+
+    // 撃破エフェクト:ゆっくり広がる輪(高速点滅は使わない)
+    for (const fx of state.effects) {
+      const k = fx.age / 18;
+      ctx.strokeStyle = palette[fx.color];
+      ctx.globalAlpha = 1 - k;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(fx.x, fx.y, 6 + k * 22, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // 敵
+    for (const e of state.enemies) {
+      const def = content.enemyTypes[e.type];
+      ctx.fillStyle = palette[def.color];
+      if (def.shape === "diamond") poly(e.x, e.y, def.size, 4, 0);
+      else if (def.shape === "triDown") poly(e.x, e.y, def.size, 3, Math.PI / 2);
+      else poly(e.x, e.y, def.size, 6, 0);
+    }
+    // 弾
+    ctx.fillStyle = palette.sky;
+    for (const b of state.bullets) circle(b.x, b.y, content.player.bulletRadius);
+    ctx.fillStyle = palette.orangeDeep;
+    for (const b of state.enemyBullets) circle(b.x, b.y, content.enemyBulletRadius);
+
+    // 自機:頂点が上の正三角形。被弾直後のみ --orange-deep。無敵中は半透明で示す(点滅ではない)
+    if (state.phase !== "title") {
+      const p = state.player;
+      ctx.fillStyle = p.flash > 0 ? palette.orangeDeep : palette.ink;
+      ctx.globalAlpha = p.invincible > 0 && p.flash === 0 ? 0.45 : 1;
+      poly(p.x, p.y, content.player.size, 3, -Math.PI / 2);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function updateHud() {
+    $("score").textContent = String(state.score);
+    $("lives").textContent = String(Math.max(0, state.player.lives));
+    $("wave").textContent = String(state.wave);
+    $("high").textContent = String(state.highScore);
+  }
+
+  /* ---- パネル(タイトル・一時停止・結果・ルール) ---- */
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function makeButton(label, onClick, secondary) {
+    const b = el("button", secondary ? "gbtn" : "gbtn gbtn-primary", label);
+    b.type = "button";
+    b.addEventListener("click", onClick);
+    return b;
+  }
+  function clearPanel() { while (panel.firstChild) panel.removeChild(panel.firstChild); }
+  function hidePanel() { overlay.hidden = true; }
+
+  function showTitle(note) {
+    clearPanel();
+    panel.appendChild(el("h2", "", T.title));
+    if (note) panel.appendChild(el("p", "", note));
+    panel.appendChild(el("p", "", T.startHint));
+    const row = el("div", "row");
+    const start = makeButton(T.start, () => dispatch({ type: "start" }));
+    row.appendChild(start);
+    panel.appendChild(row);
+    overlay.hidden = false;
+    start.focus();
+  }
+  function showPaused(note) {
+    clearPanel();
+    panel.appendChild(el("h2", "", T.paused));
+    if (note) panel.appendChild(el("p", "", note));
+    panel.appendChild(el("p", "", T.resumeHint));
+    const row = el("div", "row");
+    const resume = makeButton(T.resume, () => dispatch({ type: "resume" }));
+    row.appendChild(resume);
+    panel.appendChild(row);
+    overlay.hidden = false;
+    resume.focus();
+  }
+  function showResult(cleared) {
+    clearPanel();
+    panel.appendChild(el("h2", "", cleared ? T.clear : T.gameOver));
+    if (cleared) panel.appendChild(el("p", "", T.clearMsg));
+    panel.appendChild(el("p", "big", `${T.finalScore} ${state.score}`));
+    if (state.score > 0 && state.score >= state.highScore) panel.appendChild(el("p", "", T.newHigh));
+    const row = el("div", "row");
+    const retry = makeButton(T.newGame, () => dispatch({ type: "start" }));
+    row.appendChild(retry);
+    panel.appendChild(row);
+    overlay.hidden = false;
+    retry.focus();
+  }
+  function shapeIcon(kind, color) {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 20 20");
+    svg.setAttribute("aria-hidden", "true");
+    const p = document.createElementNS(ns, "polygon");
+    const pts = { diamond: "10,1 19,10 10,19 1,10", triDown: "1,3 19,3 10,19", triUp: "10,1 19,17 1,17",
+      hexagon: "5,2 15,2 19,10 15,18 5,18 1,10" };
+    p.setAttribute("points", pts[kind]);
+    p.setAttribute("fill", color);
+    svg.appendChild(p);
+    return svg;
+  }
+  // ルール欄の「敵の種類」(色は現在の配色から作る)
+  function buildLegend() {
+    const box = $("legend");
+    while (box.firstChild) box.removeChild(box.firstChild);
+    const items = [["diamond", palette.orange, T.enemyA], ["triDown", palette.orangeDeep, T.enemyB], ["hexagon", palette.skyDeep, T.enemyC]];
+    for (const [k, c, label] of items) {
+      const d = el("div", "legend");
+      d.appendChild(shapeIcon(k, c));
+      d.appendChild(el("span", "", label));
+      box.appendChild(d);
+    }
+  }
+  function fillList(ul, lines) {
+    while (ul.firstChild) ul.removeChild(ul.firstChild);
+    for (const line of lines) ul.appendChild(el("li", "", line));
+  }
+  function setMessage(text) { $("message").textContent = text; }
+
+  // ルール欄の開閉(全ゲーム共通の操作:N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる)。開いたらゲームは一時停止
+  function toggleRules(force, moveFocus = true) {
+    const rulesEl = $("rules");
+    const open = force === undefined ? rulesEl.hidden : force;
+    if (open && state.phase === "playing" && !state.paused) dispatch({ type: "pause" });
+    rulesEl.hidden = !open;
+    $("btn-rules").setAttribute("aria-expanded", String(open));
+    if (open) { $("seed-input").value = ""; $("seed-current").textContent = T.seedCurrent(state.rngSeed); }
+    else if (moveFocus && force === false) $("btn-rules").focus();
+  }
+  function startNew(seed) {
+    toggleRules(false, false);
+    dispatch({ type: "start", seed });
+  }
+  function onSeedSubmit() {
+    const raw = $("seed-input").value.trim();
+    if (!/^\d{1,10}$/.test(raw) || Number(raw) > 0xFFFFFFFF) { setMessage(T.seedInvalid); $("seed-input").focus(); return; }
+    startNew(Number(raw));
+  }
+
+  /* ---- 状態の反映(events → 音・通知・パネル) ---- */
+  function handleEvents(events) {
+    for (const ev of events) {
+      switch (ev.kind) {
+        case "shot": sfx.shot(); break;
+        case "hit": sfx.hit(); break;
+        case "destroy": sfx.destroy(); break;
+        case "gameOver": sfx.gameOver(); announce(`${T.gameOver}。${T.finalScore} ${state.score}`); break;
+        case "clear": announce(`${T.clear}。${T.finalScore} ${state.score}`); break;
+        case "gameStart": announce(T.gameStart); break;
+        case "waveStart":
+          if (ev.wave > 1) announce(T.waveStart(ev.wave));
+          storage.save(state); // ウェーブ開始時に保存
+          break;
+        case "milestone": announce(T.scoreMilestone(ev.score)); break;
+      }
+    }
+  }
+
+  // シードは開始時に ui が決めて rules に渡す(ロジックの中では時刻や標準の乱数を使わない)
+  function newSeed() {
+    return (Date.now() ^ Math.floor(performance.now() * 1000)) >>> 0;
+  }
+  function dispatch(action) {
+    ensureAudio();
+    const prev = state;
+    if (action.type === "start" && action.seed === undefined) action = { type: "start", seed: newSeed() };
+    state = rules.apply(state, action);
+    if (state === prev) return;
+    if (action.type === "start") { setMessage(T.newGameStarted(action.seed >>> 0)); $("seed-current").textContent = T.seedCurrent(state.rngSeed); }
+    handleEvents(state.events);
+    afterChange(prev);
+  }
+
+  function afterChange(prev) {
+    updateHud();
+    pauseBtn.hidden = state.phase !== "playing";
+    pauseBtn.setAttribute("aria-pressed", String(state.paused));
+    pauseBtn.textContent = state.paused ? "▶" : "❚❚";
+    pauseBtn.setAttribute("aria-label", state.paused ? T.resume : T.pause);
+    if (state.phase === "playing") {
+      if (state.paused) {
+        if (!prev || !prev.paused || prev.phase !== "playing") { storage.save(state); showPaused(); }
+      } else {
+        hidePanel();
+        canvas.focus();
+      }
+    } else if (state.phase === "gameover" || state.phase === "clear") {
+      if (!prev || prev.phase === "playing") {
+        storage.clearSave(state.highScore);
+        showResult(state.phase === "clear");
+      }
+    }
+    draw();
+  }
+
+  /* ---- 固定ステップループ ---- */
+  function gatherInput() {
+    const sp = content.player.speed;
+    let dx = 0, dy = 0;
+    if (keys.left) dx -= sp;
+    if (keys.right) dx += sp;
+    if (keys.up) dy -= sp;
+    if (keys.down) dy += sp;
+    dx += dragDx; dy += dragDy;
+    dragDx = 0; dragDy = 0;
+    return { dx, dy };
+  }
+  function loop(ts) {
+    rafId = requestAnimationFrame(loop);
+    if (lastTs === null) lastTs = ts;
+    acc += ts - lastTs;
+    lastTs = ts;
+    if (state.phase !== "playing" || state.paused) { acc = 0; return; }
+    let steps = 0;
+    while (acc >= STEP && steps < MAX_STEPS) {
+      const prev = state;
+      state = rules.apply(state, { type: "tick", input: gatherInput() });
+      handleEvents(state.events);
+      acc -= STEP;
+      steps++;
+      if (state.phase !== "playing" || state.paused) { afterChange(prev); acc = 0; break; }
+    }
+    if (acc >= STEP) acc = 0; // 追いつけない分は捨てる(ロジックに実時間を使わない)
+    updateHud();
+    draw();
+  }
+
+  /* ---- 入力 ---- */
+  function onKeyDown(e) {
+    const tag = e.target && e.target.tagName;
+    if (e.key === "Escape" && !$("rules").hidden) { e.preventDefault(); toggleRules(false); return; }
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    switch (e.key) {
+      case "ArrowLeft": keys.left = true; e.preventDefault(); break;
+      case "ArrowRight": keys.right = true; e.preventDefault(); break;
+      case "ArrowUp": keys.up = true; e.preventDefault(); break;
+      case "ArrowDown": keys.down = true; e.preventDefault(); break;
+      case "Enter":
+        if (tag === "BUTTON") return; // ボタンにフォーカスがあるときはボタンの動作に任せる
+        if (state.phase === "title" || state.phase === "gameover" || state.phase === "clear") dispatch({ type: "start" });
+        else if (state.phase === "playing" && state.paused) dispatch({ type: "resume" });
+        e.preventDefault();
+        break;
+      case "p": case "P":
+        togglePause();
+        e.preventDefault();
+        break;
+      case "n": case "N":
+        startNew(newSeed());
+        e.preventDefault();
+        break;
+      case "r": case "R":
+        toggleRules();
+        e.preventDefault();
+        break;
+    }
+  }
+  function onKeyUp(e) {
+    switch (e.key) {
+      case "ArrowLeft": keys.left = false; break;
+      case "ArrowRight": keys.right = false; break;
+      case "ArrowUp": keys.up = false; break;
+      case "ArrowDown": keys.down = false; break;
+    }
+  }
+  function togglePause() {
+    if (state.phase !== "playing") return;
+    dispatch({ type: state.paused ? "resume" : "pause" });
+  }
+  // ドラッグ:指の移動量ぶん自機を動かす(指で自機が隠れないようにするため)。座標は論理座標に変換
+  function onPointerDown(e) {
+    if (state.phase !== "playing" || state.paused) return;
+    pointerId = e.pointerId;
+    lastPx = e.clientX; lastPy = e.clientY;
+    canvas.setPointerCapture(pointerId);
+    e.preventDefault();
+  }
+  function onPointerMove(e) {
+    if (e.pointerId !== pointerId) return;
+    dragDx += (e.clientX - lastPx) / scale;
+    dragDy += (e.clientY - lastPy) / scale;
+    lastPx = e.clientX; lastPy = e.clientY;
+    e.preventDefault();
+  }
+  function onPointerUp(e) {
+    if (e.pointerId !== pointerId) return;
+    pointerId = null;
+  }
+
+  /* ---- 起動 ---- */
+  function init() {
+    readPalette();
+    document.title = T.title + " | 定番ゲーム | わくてかスタディ研究所";
+    $("title").textContent = T.title;
+    $("btn-rules").textContent = T.rulesButton;
+    $("btn-new").textContent = T.newGame;
+    $("rules-title").textContent = T.rulesTitle;
+    fillList($("rules-list"), T.rules);
+    $("enemies-title").textContent = T.enemiesTitle;
+    buildLegend();
+    $("keys-title").textContent = T.keysTitle;
+    fillList($("keys-list"), T.keys);
+    $("seed-title").textContent = T.seedTitle;
+    $("seed-desc").textContent = T.seedDesc;
+    $("seed-label").textContent = T.seedLabel;
+    $("btn-seed").textContent = T.seedButton;
+    $("lblScore").textContent = T.score;
+    $("lblLives").textContent = T.lives;
+    $("lblWave").textContent = T.wave;
+    $("lblHigh").textContent = T.high;
+    canvas.tabIndex = 0;
+
+    const loaded = storage.load();
+    if (loaded.save) {
+      state = loaded.save;
+      state.highScore = Math.max(state.highScore, loaded.highScore);
+      setMessage(T.restored);
+    } else {
+      state = rules.newGame(newSeed());
+      state.highScore = loaded.highScore;
+      if (loaded.corrupted) { setMessage(T.corrupted); storage.clearSave(loaded.highScore); }
+    }
+    $("seed-current").textContent = T.seedCurrent(state.rngSeed);
+
+    updateHud();
+    if (state.phase === "playing") { afterChange(null); showPaused(); }
+    else showTitle();
+
+    pauseBtn.addEventListener("click", togglePause);
+    $("btn-new").addEventListener("click", () => startNew(newSeed()));
+    $("btn-rules").addEventListener("click", () => toggleRules());
+    $("btn-seed").addEventListener("click", onSeedSubmit);
+    $("seed-input").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); onSeedSubmit(); } });
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
+    window.addEventListener("resize", resize);
+    if (window.ResizeObserver) new ResizeObserver(resize).observe($("main"));
+    if (window.matchMedia) {
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readPalette(); buildLegend(); draw(); });
+    }
+    // 画面が隠れたら自動で一時停止して保存。pagehide は補助
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        if (state.phase === "playing" && !state.paused) dispatch({ type: "pause" });
+        else storage.save(state);
+      }
+    });
+    window.addEventListener("pagehide", () => storage.save(state));
+
+    resize();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  return { init };
+})();
+
+ui.init();
+</script>
+</body>
+</html>
