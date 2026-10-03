@@ -2,14 +2,14 @@
 <!--
   定番ゲーム一覧(classic-games/index.html)
   掲載対象: 公開を確認した定番ゲーム
-  掲載順: トランプ(ババ抜き → 7並べ)→ 盤ゲーム(五目並べ → リバーシ)→ アクション(シューティング)。各分類内はルールが簡単な順
+  掲載順: トランプ(神経衰弱 → 7並べ → ババ抜き)→ 盤ゲーム(五目並べ → リバーシ)→ アクション(シューティング)。各分類内はルールが簡単な順
 -->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>定番ゲーム | わくてかスタディ研究所</title>
-<meta name="description" content="長く遊ばれてきた定番ゲームの楽しさの仕組みを研究しています。ババ抜き・7並べ・五目並べなどをブラウザで遊べます。ソースコードも公開中です。">
+<meta name="description" content="長く遊ばれてきた定番ゲームの楽しさの仕組みを研究しています。神経衰弱・7並べ・ババ抜きなどをブラウザで遊べます。ソースコードも公開中です。">
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <meta name="theme-color" content="#FFF8EE">
@@ -169,7 +169,7 @@
         <p>登録はいりません。記録はこの端末にだけ残ります。キーボードでも遊べます。</p>
       </div>
       <ul class="jump">
-        <li><a href="#cards"><span><strong>トランプ</strong><small>ババ抜き・7並べ</small></span><span class="arrow">見る <span aria-hidden="true">↓</span></span></a></li>
+        <li><a href="#cards"><span><strong>トランプ</strong><small>神経衰弱・7並べ・ババ抜き</small></span><span class="arrow">見る <span aria-hidden="true">↓</span></span></a></li>
         <li><a href="#boards"><span><strong>盤ゲーム</strong><small>五目並べ・リバーシ</small></span><span class="arrow">見る <span aria-hidden="true">↓</span></span></a></li>
         <li><a href="#actions"><span><strong>アクション</strong><small>シューティング</small></span><span class="arrow">見る <span aria-hidden="true">↓</span></span></a></li>
       </ul>
@@ -184,11 +184,11 @@
       </div>
       <ul class="games">
         <li>
-          <a class="game-card" href="babanuki.html">
-            <div class="icon" aria-hidden="true">♠<span class="red">♥</span>♣</div>
-            <h3>ババ抜き</h3>
-            <div class="meta">4人（あなた＋コンピューター3人）</div>
-            <p>となりの人の手札から1枚引いて、同じ数字がそろったら捨てます。最後にジョーカーを持っていた人の負けです。</p>
+          <a class="game-card" href="shinkei-suijaku.html">
+            <div class="icon" aria-hidden="true">♠A<span class="red">♥A</span></div>
+            <h3>神経衰弱</h3>
+            <div class="meta">1人（コンピューターなし）</div>
+            <p>裏向きに並べた52枚から2枚ずつめくり、同じ数字がそろったら取ります。全部そろえるまでの手数を競います。</p>
             <span class="play">遊ぶ</span>
           </a>
         </li>
@@ -198,6 +198,15 @@
             <h3>7並べ</h3>
             <div class="meta">4人（あなた＋コンピューター3人）</div>
             <p>場に置いた7を起点に、となりの数字を順に並べていきます。パスは3回まで。先に手札をなくした人の勝ちです。</p>
+            <span class="play">遊ぶ</span>
+          </a>
+        </li>
+        <li>
+          <a class="game-card" href="babanuki.html">
+            <div class="icon" aria-hidden="true">♠<span class="red">♥</span>♣</div>
+            <h3>ババ抜き</h3>
+            <div class="meta">4人（あなた＋コンピューター3人）</div>
+            <p>となりの人の手札から1枚引いて、同じ数字がそろったら捨てます。最後にジョーカーを持っていた人の負けです。</p>
             <span class="play">遊ぶ</span>
           </a>
         </li>

@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<!--
+  ============================================================
+  わくてかスタディ研究所 定番ゲーム: 神経衰弱
+  ============================================================
+  ゲーム名      : 神経衰弱 / shinkei-suijaku
+  版            : 0.1
+  最終更新日    : 2026-10-02
+  ライセンス    : MIT-0(リポジトリの LICENSE を参照)
+  配置パス      : classic-games/shinkei-suijaku.html
+
+  [題材の確認(ルール・名称・見た目の3点)]
+    ① メカニクス : 伏せたカードを2枚ずつめくって組を探す、伝統的なトランプの遊び方。特定企業の権利主張は見当たらない → 問題なし
+    ② 名称       : 「神経衰弱」はトランプ遊びの一般的な呼び名 → 問題なし。
+                   英語名の Memory / Concentration は他社の商品名・番組名として使われてきたため、名称にもスラッグにも使わない。
+                   スラッグはローマ字の shinkei-suijaku
+    ③ 表現       : カードは Unicode のスート記号＋数字と、CSS の縞模様の裏面だけで独自に描く。既存商品の絵柄・パッケージをまねない → 問題なし
+    (一般的な整理で、法的な判断ではない)
+
+  [採用ルール] (2026-10-02 運営者の選択)
+    - 1人で遊ぶ(CPUなし)。全部そろえるまでの手数を競う。最少の手数をベストとして残す
+    - 52枚(ジョーカーなし)を裏向きに並べる。並び順はシード付き乱数で決める
+    - 1手で2枚めくる。同じ数字ならスートを問わず組になり、取る(表のまま「そろった」表示で残す)
+    - そろわなかった2枚は、少し待つと裏に戻る。待たずに次のカードを押すと、その場で戻してから1枚目をめくる
+    - 手数は「2枚目をめくった回数」。最少は26手
+    - 1人用なので ai(CPUの思考)のまとまりは置かない
+
+  [流用できる部品]
+    - rng (mulberry32: seed → [0,1) の関数)、rng.shuffle (Fisher–Yates、元の配列を書き換えない)
+    - rules.apply の「1枚目 → 2枚目 → 一致判定 → 不一致なら保留して戻す」の流れ(状態は素のデータ、純粋関数)
+    - rules.isPair (組の判定。ここだけ差し替えれば組の条件を変えられる)
+    - rules.validate (並び順が 0〜51 の並べ替えになっているか、表の札と取った札が矛盾しないかまで検証)
+    - ui のカード格子(ボタン群＋矢印キーで動くロービング tabindex。列数は CSS から読むので、画面幅で列数が変わっても動く)
+
+  [転用メモ]
+    1. 仕組みの核: 「伏せた札の位置を覚え、組になる2枚を少ない手数で探す」。見る → 覚える → 思い出して照合する、の繰り返し
+    2. 転用アイディア(実装しない):
+       - 組を「用語と定義」「英単語と和訳」「漢字と読み」に置き換えた、知識の組み合わせ神経衰弱
+       - 組を「式と答え(3×4 と 12)」にして、計算と記憶を同時に使う
+       - 組になったときに、その組の解説を1行表示して、覚えた位置と内容を結びつける
+    3. 差し替える箇所: content.suits / content.ranks(表示)、rules.rankOf / rules.isPair(組の判定)、CONFIG.cardCount / rankCount
+
+  [セキュリティ確認] 外部通信 0件 / HTML文字列の差し込み・動的なコード実行 0件 / rules・rng・content は DOM を参照しない
+  ============================================================
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>神経衰弱 | 定番ゲーム | わくてかスタディ研究所</title>
+<meta name="description" content="神経衰弱をブラウザで遊べます。裏向きに並べた52枚から2枚ずつめくり、同じ数字がそろったら取ります。全部そろえるまでの手数を競います。">
+<meta name="theme-color" content="#FFF8EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#24170F" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<style>
+  /* ===== 共通ここから:戻りリンク・見出し・タイトル・ボタン(全ゲームで同じ内容。変えてよいのは --gh-width の値だけ。正本は _dev/game-template.html) ===== */
+  :root {
+    --gh-width: 60rem;           /* ★ゲームごと:ゲーム本体の幅(盤ゲーム 32rem、カードゲーム 60rem など)。戻りリンクと見出しをこの幅にそろえる */
+    --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
+    --gh-cta: #B85215; --gh-cta-fg: #FFFFFF;   /* 白文字 4.93:1 */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --gh-btn-bg: #33231A; --gh-btn-fg: #FFF1E0; --gh-btn-line: #6E5443; --gh-cta: #F29A55; --gh-cta-fg: #24170F; }
+  }
+  [hidden] { display: none !important; }
+  .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin-top: 0; margin-bottom: 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+  .site-back.gh-col { padding-left: 0; padding-right: 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+  .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
+  .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
+  .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  button.gbtn { font: inherit; font-size: 1rem; line-height: 1.2; font-weight: 400; min-height: 2.75rem; padding: 0.5rem 1rem; border-radius: 0.5rem;
+    border: 1px solid var(--gh-btn-line); background: var(--gh-btn-bg); color: var(--gh-btn-fg); cursor: pointer; }
+  button.gbtn.gbtn-primary { background: var(--gh-cta); color: var(--gh-cta-fg); border-color: var(--gh-cta); font-weight: 700; }
+  @media (max-width: 480px) {
+    .game-head, .game-actions { gap: 0.4rem; }
+    .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
+  }
+  /* ===== 共通ここまで ===== */
+
+  /* ===== 標準の部品(新しく作るゲームはこの形を使う。ゲームに合わせて調整してよい) ===== */
+  :root {
+    /* 配色(ライト)。文字色は背景とのコントラスト比 4.5:1 以上 */
+    --ink: #3B2416;              /* 文字・見出し・フォーカスリング */
+    --ink-soft: #6E5443;         /* 薄い文字 */
+    --paper: #FFF8EE;            /* 背景 */
+    --paper-warm: #FFEBD2;       /* パネル・帯 */
+    --card: #FFFFFF;             /* カード・入力欄 */
+    --line: #E3CBB0;             /* 枠線 */
+    --spark: #E8792B;            /* 手番・選択中の枠や印(文字色には使わない) */
+    --red-text: #B8321F;         /* 赤スートなど赤系の文字(白 5.98:1) */
+    --focus: var(--ink);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #FFF1E0; --ink-soft: #D9C3AE; --paper: #24170F; --paper-warm: #33231A;
+      --card: #3A281C; --line: #6E5443; --red-text: #FF9C8C; --focus: #F29A55; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); line-height: 1.6;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  button.gbtn:disabled { opacity: 0.5; cursor: default; }
+  /* ルール欄(見出しのすぐ下に開く。最初は閉じる) */
+  .rules-panel { background: var(--paper-warm); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+  .rules-panel h2 { font-size: 1.05rem; margin: 0.75rem 0 0.25rem; }
+  .rules-panel h2:first-child { margin-top: 0; }
+  .rules-panel ul { padding-left: 1.2em; margin: 0.25rem 0; }
+  .rules-panel p { margin: 0.25rem 0; }
+  .seed-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+  .seed-form input { font: inherit; padding: 0.4rem 0.5rem; width: 10em; max-width: 100%; border: 1px solid var(--line); border-radius: 0.4rem; background: var(--card); color: var(--ink); }
+  /* 状況の表示と、対局後の「新しいゲーム」 */
+  .message { min-height: 1.6em; margin: 0 0 0.75rem; }
+  .game-over { display: flex; margin: 0.75rem 0; }
+  main { padding-bottom: 1.5rem; }
+
+  /* ===== ゲーム固有のスタイル ===== */
+  :root {
+    --back: #B85215;             /* カードの裏(地) */
+    --back-stripe: #CF6A2C;      /* カードの裏(縞) */
+    --done: var(--paper-warm);   /* そろったカードの地 */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --back: #8F3F14; --back-stripe: #A9521F; }
+  }
+  /* 手数・そろった組・ベスト */
+  .stats { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; margin: 0 0 0.75rem; padding: 0.5rem 0.75rem;
+    background: var(--paper-warm); border-radius: 0.5rem; font-size: 0.95rem; }
+  .stats b { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+  /* カードの格子。スマホは8列、広い画面は13列(1スート分) */
+  .table { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0.3rem; }
+  @media (min-width: 44rem) { .table { grid-template-columns: repeat(13, minmax(0, 1fr)); gap: 0.45rem; } }
+  .card { font: inherit; margin: 0; padding: 0; min-width: 0; aspect-ratio: 5 / 7; min-height: 2.75rem;
+    border-radius: 0.4rem; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.05rem;
+    line-height: 1; font-size: 1rem; font-weight: 700; cursor: pointer; }
+  @media (min-width: 44rem) { .card { font-size: 1.35rem; border-radius: 0.5rem; } }
+  .card .suit { font-size: 0.9em; }
+  .card.red { color: var(--red-text); }
+  /* 裏:縞模様(文字なし)。表やそろったカードと、色だけでなく「文字の有無」でも区別できる */
+  .card.is-back { border-color: var(--back);
+    background: repeating-linear-gradient(45deg, var(--back) 0 0.3rem, var(--back-stripe) 0.3rem 0.6rem); }
+  .card.is-back:hover { filter: brightness(1.08); }
+  /* めくった札:太い枠 */
+  .card.is-up { box-shadow: inset 0 0 0 3px var(--spark); }
+  /* そろった札:点線の枠＋落ち着いた地(文字のコントラストは保つ) */
+  .card.is-done { background: var(--done); border-style: dashed; border-color: var(--ink-soft); cursor: default; font-weight: 400; }
+  @media (prefers-reduced-motion: no-preference) { .card { transition: background-color 0.15s, box-shadow 0.15s; } }
+</style>
+</head>
+<body>
+<!-- ===== 共通ここから(HTML):戻りリンク・見出し・ルール欄・メッセージ ===== -->
+<nav class="site-back gh-col" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
+<header class="game-head gh-col">
+  <h1 id="title"></h1>
+  <div class="game-actions">
+    <button type="button" id="btn-rules" class="gbtn" aria-expanded="false" aria-controls="rules"></button>
+    <button type="button" id="btn-new" class="gbtn gbtn-primary"></button>
+  </div>
+</header>
+<main class="gh-col">
+  <section id="rules" class="rules-panel" hidden aria-labelledby="rules-title">
+    <h2 id="rules-title"></h2>
+    <ul id="rules-list"></ul>
+    <h2 id="keys-title"></h2>
+    <ul id="keys-list"></ul>
+    <h2 id="seed-title"></h2>
+    <p id="seed-current"></p>
+    <p id="seed-desc"></p>
+    <div class="seed-form">
+      <label for="seed-input" id="seed-label"></label>
+      <input id="seed-input" type="text" inputmode="numeric" autocomplete="off">
+      <button type="button" id="btn-seed" class="gbtn"></button>
+    </div>
+  </section>
+  <p id="message" class="message" role="status" aria-live="polite"></p>
+<!-- ===== 共通ここまで(HTML) ===== -->
+
+  <!-- ===== ゲーム本体 ===== -->
+  <section id="game" aria-label="ゲーム">
+    <p class="stats" id="stats">
+      <span id="stat-moves"></span>
+      <span id="stat-pairs"></span>
+      <span id="stat-best"></span>
+    </p>
+    <div class="table" id="table" role="group" aria-label="カード"></div>
+  </section>
+
+  <!-- 共通:対局後の「新しいゲーム」(スマホで上に戻らずに始められるように) -->
+  <div class="game-over" id="game-over" hidden>
+    <button type="button" id="btn-new-2" class="gbtn gbtn-primary"></button>
+  </div>
+</main>
+
+<script>
+'use strict';
+
+/* ============================================================
+ * CONFIG:ゲームごとの設定値
+ * ============================================================ */
+const CONFIG = Object.freeze({
+  gameId: 'shinkei-suijaku',
+  schemaVersion: 1,                   // 保存形式を変えたら上げる(古い保存データは破棄して新しく始める)
+  storageKey: 'wktks.game.shinkei-suijaku',
+  seedMax: 0xFFFFFFFF,                // シードは0以上の32bit整数
+  suitCount: 4,
+  rankCount: 13,
+  cardCount: 52,                      // suitCount × rankCount。ジョーカーなし
+  pairCount: 26,                      // 全部そろえたときの組の数(＝最少の手数)
+  maxMoves: 9999,                     // 手数の上限(異常な保存データで表示が崩れないように)
+  mismatchMs: 1200,                   // 仮 そろわなかった2枚を裏に戻すまでの間(覚える時間)
+});
+
+/* ============================================================
+ * TEXT:画面の文言はここにまとめる(コード中に直書きしない)
+ * ============================================================ */
+const TEXT = Object.freeze({
+  title: '神経衰弱',
+  rulesButton: 'ルール (R)',
+  newGame: '新しいゲーム (N)',
+  rulesTitle: 'ルール',
+  rules: [
+    '52枚のカード（ジョーカーなし）を裏向きに並べます。',
+    '1手で2枚めくります。同じ数字なら、スートが違っても組になって取れます。',
+    'そろわなかった2枚は、少しすると裏に戻ります。待たずに次のカードを押しても戻ります。',
+    '26組すべてそろえるまでの手数を競います。少ないほど良い記録で、いちばん少ない手数をベストとして残します。',
+  ],
+  keysTitle: 'キーボード操作',
+  keys: [
+    '矢印キー: カードを選ぶ（Home / End で行の端へ）',
+    'Enter / Space: カードをめくる',
+    'N: 新しいゲーム',
+    'R: ルールの表示/非表示',
+    'Esc: ルールを閉じる',
+  ],
+  seedTitle: 'シード',
+  seedCurrent: (seed) => `現在のシード: ${seed}`,
+  seedDesc: '同じシードで同じ操作をすると、同じ展開になります。',
+  seedLabel: 'シード（整数）',
+  seedButton: 'このシードで新しいゲーム',
+  seedInvalid: 'シードには0以上の整数を入れてください。',
+  newGameStarted: (seed) => `新しいゲームを始めました（シード ${seed}）。`,
+  restored: '中断したゲームを再開しました。',
+  corrupted: '保存データを読み込めなかったため、新しいゲームを始めました。',
+  // ゲーム固有
+  statMoves: (n) => `手数 ${n}`,
+  statPairs: (n, max) => `そろった組 ${n} / ${max}`,
+  statBest: (n) => (n === null ? 'ベスト —' : `ベスト ${n}手`),
+  flipped: (a) => `${a} をめくりました。`,
+  paired: (a, b) => `${a} と ${b} がそろいました。`,
+  missed: (a, b) => `${a} と ${b} はそろいませんでした。`,
+  finished: (moves) => `26組すべてそろいました。手数は${moves}でした。`,
+  newBest: 'ベスト記録です。',
+  cardAria: (pos, face, stateWord) => (face === null ? `${pos}枚目（裏）` : `${pos}枚目 ${face}（${stateWord}）`),
+  stateUp: '表',
+  stateDone: 'そろった',
+});
+
+/* ============================================================
+ * rng:シード付き疑似乱数(ゲームロジックでは、シードを指定できない標準の乱数関数を使わない)
+ * DOM に依存させない
+ * ============================================================ */
+const rng = (() => {
+  // mulberry32:シードから決まった順の乱数を作る
+  function make(seed) {
+    let a = seed >>> 0;
+    return function next() {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function shuffle(array, next) {
+    const a = array.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(next() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  return Object.freeze({ make, shuffle });
+})();
+
+/* ============================================================
+ * content:表示名など差し替えできるデータ(将来 JSON として外から読める素のデータ)
+ * rules は「スート0の6番」のような番号だけを扱い、表示はここで決める
+ * DOM に依存させない
+ * ============================================================ */
+const content = Object.freeze({
+  suits: Object.freeze([
+    Object.freeze({ mark: '♠', name: 'スペード', red: false }),
+    Object.freeze({ mark: '♥', name: 'ハート', red: true }),
+    Object.freeze({ mark: '♦', name: 'ダイヤ', red: true }),
+    Object.freeze({ mark: '♣', name: 'クラブ', red: false }),
+  ]),
+  ranks: Object.freeze(['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']),
+});
+
+/* ============================================================
+ * rules:初期状態・操作の適用・終了判定・保存データの検証
+ * 状態は JSON にそのまま変換できる素のデータ。受け取った状態は書き換えず、新しい状態を返す
+ * DOM に依存させない
+ *
+ * 状態の形:
+ *   deck    : 長さ52。位置 i に置いたカードの番号(0〜51。番号 = スート × 13 ＋ ランク)
+ *   matched : 長さ52の真偽値。位置 i のカードを取ったか
+ *   faceUp  : いま表になっている位置(0〜2個)。2個のときは「そろわなかった2枚」が戻るのを待っている
+ *   moves   : 手数(2枚目をめくった回数)
+ *   best    : これまでの最少手数(なければ null)。新しいゲームに引き継ぐ
+ * ============================================================ */
+const rules = (() => {
+  function suitOf(card) { return Math.floor(card / CONFIG.rankCount); }
+  function rankOf(card) { return card % CONFIG.rankCount; }
+  // 組の判定。学習ゲームに転用するときはここを差し替える(例:用語と定義の番号が対応するか)
+  function isPair(a, b) { return a !== b && rankOf(a) === rankOf(b); }
+
+  function isValidBest(best) {
+    return best === null || (Number.isInteger(best) && best >= CONFIG.pairCount && best <= CONFIG.maxMoves);
+  }
+
+  function newGame(seed, best = null) {
+    const next = rng.make(seed);
+    const deck = rng.shuffle(Array.from({ length: CONFIG.cardCount }, (_, i) => i), next);
+    return {
+      schemaVersion: CONFIG.schemaVersion,
+      seed: seed >>> 0,
+      deck,
+      matched: new Array(CONFIG.cardCount).fill(false),
+      faceUp: [],
+      moves: 0,
+      best: isValidBest(best) ? best : null,
+      finished: false,
+    };
+  }
+
+  function pairsFound(state) { return state.matched.filter(Boolean).length / 2; }
+  function isOver(state) { return state.finished; }
+  // そろわなかった2枚が表のまま残っているか(ui はこれを見て、裏に戻すまでの間を置く)
+  function isWaitingHide(state) { return state.faceUp.length === 2; }
+
+  // そろわなかった2枚を裏に戻す
+  function hide(state) {
+    if (!isWaitingHide(state)) return state;
+    return { ...state, faceUp: [] };
+  }
+
+  // 位置 index をめくる。めくれない位置なら、受け取った状態をそのまま返す
+  function flip(state, index) {
+    if (state.finished) return state;
+    const base = hide(state);   // 2枚が戻るのを待っている間に押したら、先に戻す
+    if (!Number.isInteger(index) || index < 0 || index >= CONFIG.cardCount) return state;
+    if (base.matched[index] || base.faceUp.includes(index)) return state;
+
+    if (base.faceUp.length === 0) return { ...base, faceUp: [index] };
+
+    // 2枚目:手数を数えて、組か判定する
+    const first = base.faceUp[0];
+    const moves = Math.min(base.moves + 1, CONFIG.maxMoves);
+    if (!isPair(base.deck[first], base.deck[index])) {
+      return { ...base, faceUp: [first, index], moves };
+    }
+    const matched = base.matched.slice();
+    matched[first] = true;
+    matched[index] = true;
+    const finished = matched.every(Boolean);
+    let best = base.best;
+    if (finished && (best === null || moves < best)) best = moves;
+    return { ...base, matched, faceUp: [], moves, best, finished };
+  }
+
+  function apply(state, action) {
+    if (!action || typeof action !== 'object') return state;
+    if (action.type === 'flip') return flip(state, action.index);
+    if (action.type === 'hide') return hide(state);
+    return state;
+  }
+
+  // 保存データの検証:形が違うもの・上限を超えるもの・矛盾するものは受け付けない
+  function validate(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+    if (data.schemaVersion !== CONFIG.schemaVersion) return false;
+    if (!Number.isInteger(data.seed) || data.seed < 0 || data.seed > CONFIG.seedMax) return false;
+    const n = CONFIG.cardCount;
+    // deck は 0〜51 をちょうど1回ずつ含む
+    if (!Array.isArray(data.deck) || data.deck.length !== n) return false;
+    const seen = new Array(n).fill(false);
+    for (const c of data.deck) {
+      if (!Number.isInteger(c) || c < 0 || c >= n || seen[c]) return false;
+      seen[c] = true;
+    }
+    if (!Array.isArray(data.matched) || data.matched.length !== n) return false;
+    if (!data.matched.every((m) => typeof m === 'boolean')) return false;
+    // 取った札は、ランクごとに偶数枚(組で取るため)
+    const perRank = new Array(CONFIG.rankCount).fill(0);
+    data.matched.forEach((m, i) => { if (m) perRank[rankOf(data.deck[i])] += 1; });
+    if (perRank.some((k) => k % 2 !== 0)) return false;
+    const pairs = perRank.reduce((s, k) => s + k, 0) / 2;
+    // 表の札:0〜2枚、重複なし、取った札ではない。2枚なら「そろわなかった2枚」
+    if (!Array.isArray(data.faceUp) || data.faceUp.length > 2) return false;
+    for (const i of data.faceUp) {
+      if (!Number.isInteger(i) || i < 0 || i >= n || data.matched[i]) return false;
+    }
+    if (data.faceUp.length === 2) {
+      if (data.faceUp[0] === data.faceUp[1]) return false;
+      if (isPair(data.deck[data.faceUp[0]], data.deck[data.faceUp[1]])) return false;
+    }
+    if (!Number.isInteger(data.moves) || data.moves < pairs || data.moves > CONFIG.maxMoves) return false;
+    if (!isValidBest(data.best)) return false;
+    if (typeof data.finished !== 'boolean') return false;
+    if (data.finished !== (pairs === CONFIG.pairCount)) return false;
+    if (data.finished && data.faceUp.length !== 0) return false;
+    return true;
+  }
+
+  return Object.freeze({ suitOf, rankOf, isPair, newGame, apply, isOver, isWaitingHide, pairsFound, validate });
+})();
+
+/* ============================================================
+ * storage:localStorage の読み書き。読み込んだら必ず rules.validate を通す
+ * ============================================================ */
+const storage = (() => {
+  function load() {
+    let raw;
+    try { raw = localStorage.getItem(CONFIG.storageKey); } catch (e) { return { state: null, status: 'unavailable' }; }
+    if (raw === null) return { state: null, status: 'none' };
+    try {
+      const data = JSON.parse(raw);
+      if (rules.validate(data)) return { state: data, status: 'ok' };
+    } catch (e) { /* 構文エラーは下で破棄 */ }
+    try { localStorage.removeItem(CONFIG.storageKey); } catch (e) { /* 何もしない */ }
+    return { state: null, status: 'corrupted' };
+  }
+  function save(state) {
+    try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(state)); } catch (e) { /* 保存できなくても遊べる */ }
+  }
+  return Object.freeze({ load, save });
+})();
+
+/* ============================================================
+ * ui:描画とイベント処理。状態は直接書き換えず、必ず rules を通す
+ * 文字は textContent で入れる(HTML文字列を差し込む書き方は使わない)
+ * ============================================================ */
+const ui = (() => {
+  const $ = (id) => document.getElementById(id);
+  let state = null;
+  let cursor = 0;          // キーボードで選んでいる位置(ロービング tabindex)
+  let hideTimer = null;    // そろわなかった2枚を裏に戻すタイマー
+  const cardButtons = [];
+
+  function freshSeed() { return ((Date.now() ^ Math.floor(performance.now() * 1000)) >>> 0); }
+  function setMessage(text) { $('message').textContent = text; }
+  function fillList(ul, lines) {
+    while (ul.firstChild) ul.removeChild(ul.firstChild);
+    for (const line of lines) { const li = document.createElement('li'); li.textContent = line; ul.appendChild(li); }
+  }
+
+  // カード番号 → 表示(画面用 ♥7 と、読み上げ用「ハートの7」)
+  function suitData(card) { return content.suits[rules.suitOf(card)]; }
+  function rankText(card) { return content.ranks[rules.rankOf(card)]; }
+  function cardLabel(card) { return suitData(card).mark + rankText(card); }
+  function cardSpoken(card) { return `${suitData(card).name}の${rankText(card)}`; }
+
+  function fillTexts() {
+    document.title = TEXT.title + ' | 定番ゲーム | わくてかスタディ研究所';
+    $('title').textContent = TEXT.title;
+    $('btn-rules').textContent = TEXT.rulesButton;
+    $('btn-new').textContent = TEXT.newGame;
+    $('btn-new-2').textContent = TEXT.newGame;
+    $('rules-title').textContent = TEXT.rulesTitle;
+    fillList($('rules-list'), TEXT.rules);
+    $('keys-title').textContent = TEXT.keysTitle;
+    fillList($('keys-list'), TEXT.keys);
+    $('seed-title').textContent = TEXT.seedTitle;
+    $('seed-desc').textContent = TEXT.seedDesc;
+    $('seed-label').textContent = TEXT.seedLabel;
+    $('btn-seed').textContent = TEXT.seedButton;
+  }
+
+  // カードのボタンは最初に52個だけ作り、以後は属性と文字だけ書き換える(フォーカスを保つため)
+  function buildTable() {
+    const table = $('table');
+    for (let i = 0; i < CONFIG.cardCount; i++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'card';
+      b.dataset.index = String(i);
+      const rank = document.createElement('span');
+      rank.className = 'rank';
+      rank.setAttribute('aria-hidden', 'true');
+      const suit = document.createElement('span');
+      suit.className = 'suit';
+      suit.setAttribute('aria-hidden', 'true');
+      b.appendChild(rank);
+      b.appendChild(suit);
+      b.addEventListener('click', () => { cursor = i; onFlip(i); });
+      b.addEventListener('focus', () => { if (cursor !== i) { cursor = i; updateTabStops(); } });
+      table.appendChild(b);
+      cardButtons.push(b);
+    }
+  }
+
+  function updateTabStops() {
+    cardButtons.forEach((b, i) => { b.tabIndex = i === cursor ? 0 : -1; });
+  }
+
+  function renderCard(i) {
+    const b = cardButtons[i];
+    const card = state.deck[i];
+    const done = state.matched[i];
+    const up = state.faceUp.includes(i);
+    const visible = done || up;
+    b.classList.toggle('is-back', !visible);
+    b.classList.toggle('is-up', up);
+    b.classList.toggle('is-done', done);
+    b.classList.toggle('red', visible && suitData(card).red);
+    b.firstChild.textContent = visible ? rankText(card) : '';
+    b.lastChild.textContent = visible ? suitData(card).mark : '';
+    // 取った札・表の札は押しても何も起きない(フォーカスは残すため disabled にはしない)
+    b.setAttribute('aria-disabled', String(visible || state.finished));
+    b.setAttribute('aria-label', TEXT.cardAria(i + 1, visible ? cardSpoken(card) : null, done ? TEXT.stateDone : TEXT.stateUp));
+  }
+
+  function render() {
+    $('seed-current').textContent = TEXT.seedCurrent(state.seed);
+    $('game-over').hidden = !rules.isOver(state);
+    $('stat-moves').textContent = TEXT.statMoves(state.moves);
+    $('stat-pairs').textContent = TEXT.statPairs(rules.pairsFound(state), CONFIG.pairCount);
+    $('stat-best').textContent = TEXT.statBest(state.best);
+    for (let i = 0; i < CONFIG.cardCount; i++) renderCard(i);
+    updateTabStops();
+  }
+
+  function clearHideTimer() {
+    if (hideTimer !== null) { clearTimeout(hideTimer); hideTimer = null; }
+  }
+
+  // そろわなかった2枚があれば、覚える時間を置いてから裏に戻す
+  function scheduleHide() {
+    clearHideTimer();
+    if (!rules.isWaitingHide(state)) return;
+    hideTimer = setTimeout(() => {
+      hideTimer = null;
+      commit(rules.apply(state, { type: 'hide' }));
+    }, CONFIG.mismatchMs);
+  }
+
+  function commit(next) {
+    state = next;
+    storage.save(state);
+    render();
+    scheduleHide();
+  }
+
+  function onFlip(index) {
+    const prev = state;
+    const next = rules.apply(prev, { type: 'flip', index });
+    if (next === prev) return;
+    commit(next);
+    // 何が起きたかを、前後の状態の差から読み取って知らせる
+    const label = cardLabel(next.deck[index]);
+    if (next.faceUp.length === 1) {
+      setMessage(TEXT.flipped(label));
+    } else {
+      const firstIndex = prev.faceUp.length === 1 ? prev.faceUp[0] : -1;
+      const firstLabel = cardLabel(next.deck[firstIndex]);
+      if (next.faceUp.length === 2) setMessage(TEXT.missed(firstLabel, label));
+      else if (next.finished) {
+        const isBest = next.best === next.moves && (prev.best === null || next.moves < prev.best);
+        setMessage(TEXT.paired(firstLabel, label) + TEXT.finished(next.moves) + (isBest ? TEXT.newBest : ''));
+      } else setMessage(TEXT.paired(firstLabel, label));
+    }
+  }
+
+  function startNew(seed) {
+    clearHideTimer();
+    toggleRules(false, false);
+    const best = state ? state.best : null;   // ベストは新しいゲームに引き継ぐ
+    cursor = 0;
+    commit(rules.newGame(seed, best));
+    setMessage(TEXT.newGameStarted(state.seed));
+  }
+
+  // ルール欄の開閉(全ゲーム共通の操作:N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる)
+  function toggleRules(force, moveFocus = true) {
+    const panel = $('rules');
+    const open = force === undefined ? panel.hidden : force;
+    panel.hidden = !open;
+    $('btn-rules').setAttribute('aria-expanded', String(open));
+    if (open) $('seed-input').value = '';
+    else if (moveFocus && force === false) $('btn-rules').focus();
+  }
+
+  function onSeedSubmit() {
+    const raw = $('seed-input').value.trim();
+    if (!/^\d{1,10}$/.test(raw) || Number(raw) > CONFIG.seedMax) { setMessage(TEXT.seedInvalid); $('seed-input').focus(); return; }
+    startNew(Number(raw));
+  }
+
+  // 格子の列数は CSS(画面幅)で変わるので、描画結果から読む
+  function columnCount() {
+    const cols = getComputedStyle($('table')).gridTemplateColumns.split(' ').filter(Boolean).length;
+    return Math.max(1, cols);
+  }
+
+  function moveCursor(key) {
+    const cols = columnCount();
+    const last = CONFIG.cardCount - 1;
+    let to = cursor;
+    if (key === 'ArrowLeft') to = cursor - 1;
+    else if (key === 'ArrowRight') to = cursor + 1;
+    else if (key === 'ArrowUp') to = cursor - cols;
+    else if (key === 'ArrowDown') to = cursor + cols;
+    else if (key === 'Home') to = cursor - (cursor % cols);
+    else if (key === 'End') to = Math.min(last, cursor - (cursor % cols) + cols - 1);
+    if (to < 0 || to > last) return;
+    cursor = to;
+    updateTabStops();
+    cardButtons[cursor].focus();
+  }
+
+  function onKey(e) {
+    if (e.key === 'Escape' && !$('rules').hidden) { e.preventDefault(); toggleRules(false); return; }
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); startNew(freshSeed()); return; }
+    if (e.key === 'r' || e.key === 'R') { e.preventDefault(); toggleRules(); return; }
+    // 矢印キーは、カードにフォーカスがあるときだけ使う(ページのスクロールを邪魔しない)
+    const onCard = e.target && e.target.classList && e.target.classList.contains('card');
+    if (onCard && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault();
+      moveCursor(e.key);
+    }
+  }
+
+  function init() {
+    fillTexts();
+    buildTable();
+    $('btn-new').addEventListener('click', () => startNew(freshSeed()));
+    $('btn-new-2').addEventListener('click', () => startNew(freshSeed()));
+    $('btn-rules').addEventListener('click', () => toggleRules());
+    $('btn-seed').addEventListener('click', onSeedSubmit);
+    $('seed-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onSeedSubmit(); } });
+    document.addEventListener('keydown', onKey);
+
+    const loaded = storage.load();
+    if (loaded.state) { commit(loaded.state); setMessage(TEXT.restored); }
+    else {
+      startNew(freshSeed());
+      if (loaded.status === 'corrupted') setMessage(TEXT.corrupted);
+    }
+  }
+
+  return Object.freeze({ init });
+})();
+
+ui.init();
+</script>
+</body>
+</html>
