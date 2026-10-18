@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<!--
+  ============================================================
+  わくてかスタディ研究所 定番ゲーム: 大富豪
+  ============================================================
+  ゲーム名      : 大富豪 / daifugo
+  版            : 0.1
+  最終更新日    : 2026-10-18
+  ライセンス    : MIT-0(リポジトリの LICENSE を参照)
+  配置パス      : classic-games/daifugo.html
+
+  [題材の確認(ルール・名称・見た目の3点)]
+    ① メカニクス : 日本で広く遊ばれている伝統的なトランプゲーム。特定企業の権利主張は見当たらない → 問題なし
+    ② 名称       : 「大富豪」(別名「大貧民」)は一般名称として扱う。登録商標かどうかの公的データベースでの確認は未実施
+    ③ 表現       : カードは Unicode のスート記号(♠♥♦♣)と文字だけで独自に描く。ジョーカーも文字(JK)で表示 → 問題なし
+
+  [採用ルール] (2026-10-18 確定)
+    - 4人(人間1、CPU3)。52枚＋ジョーカー1枚(53枚)。配り始めの人をシード付き乱数で決め、13〜14枚ずつ配る
+    - 強さ: 3＜4＜…＜K＜A＜2＜ジョーカー
+    - 出せる組: 1枚 / 同じ数字2〜4枚(ジョーカー込みで最大5枚) / 階段(同じスートの連番3枚以上。3〜A の範囲で、2 は使えない)
+      ジョーカーは組の中では好きな札の代わり(階段の中も可)。1枚で出すと最強(革命中も最強)
+    - 場と同じ形・同じ枚数で、より強い組だけ出せる。階段は最小の数字で比べる。しばりなし
+    - パスは出せる札があっても可(場が空のときは不可)。パスしても次の手番では出せる
+      最後に出した人以外が全員続けてパスしたら場を流し、最後に出した人から再開(その人が上がっていたら次の人から)
+    - 革命: 同じ数字4枚以上、または5枚以上の階段で強さが逆転。もう一度革命が起きると元に戻る。ラウンドごとに元に戻す
+    - 8切り: 本物の8を含む組(階段を含む)を出すと場を流し、出した人から再開(上がっていたら次の人から)
+      (ジョーカーが8の代わりになっているだけのときは8切りにしない。どの数字の代わりかが見た目で分かりにくいため)
+    - 採用しない: しばり、都落ち、スペ3返し、11バック、反則上がり
+    - 先手: 1ラウンド目は♦3を持つ人、2ラウンド目からは前のラウンドの大貧民
+    - 手札を出し切った順に 大富豪・富豪・貧民・大貧民。区切りなしで身分を持ち越し、何ラウンドでも続ける
+    - カード交換(2ラウンド目から): 大貧民→大富豪にいちばん強い2枚、貧民→富豪にいちばん強い1枚(自動)
+      大富豪・富豪は好きな札を同じ枚数返す(CPUはいちばん弱い札を返す)。交換の内容は表向きで画面に出す
+    - CPUの強さは1段階。出せる組のうち弱いものから出す。2とジョーカー(革命中は3とジョーカー)は手札が4枚以下になるまで温存。
+      場が空のときは弱い数字を組ごと出す。革命は手札が弱めのときだけ起こす。同点はシード付き乱数
+
+  [流用できる部品]
+    - rng      : シード付き疑似乱数(mulberry32)と Fisher-Yates シャッフル。乱数の状態を state.rngState に保存して続きから引ける
+    - rules    : 組の形の判定(analyze: 1枚・同じ数字・階段、ジョーカーの当てはめ)、強さ比較(beats: 革命で反転)、
+                 合法手の列挙(legalPlays)、場の流れ(全員パス・8切り)、上がりと順位、身分とカード交換、保存データの検証(validate)
+    - ai       : 「合法手 → 点数付け → 同点はシード乱数」という選択の骨格。状態を書き換えない
+    - ui       : 複数枚の札の選択(←→/Space/Enter/P)、CPUの手番を間を置いて進める仕組み、aria-live での通知
+
+  [転用メモ]
+    1. 仕組みの核: 「場に出ている組より、同じ形でより強い組を出す。出せなければパスし、全員がパスしたら最後に出した人から仕切り直す」
+    2. 転用アイディア(実装しない):
+       - 強さを「数値」に置き換え、分数・小数・負の数の大小を比べて出す
+       - 強さを「年代」に置き換え、より新しい出来事を出していく歴史ゲーム
+       - 同じ数字の組を「同じ仲間(例:同じ族の元素)」に置き換え、まとめて出す
+    3. 差し替える箇所: content.suits / content.ranks / content.cardLabel、rules.rankOf / suitOf(強さと仲間の判定)、
+       rules.analyze(組の形)、CONFIG.deckSize / jokerId
+  ============================================================
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>大富豪 | 定番ゲーム | わくてかスタディ研究所</title>
+<meta name="description" content="大富豪をブラウザで遊べます。場に出た札より強い札を出していき、手札を出し切った順に身分が決まります。革命・8切り・階段・カード交換ありです。">
+<meta name="theme-color" content="#FFF8EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#24170F" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<style>
+  /* ===== 共通ここから:戻りリンク・見出し・タイトル・ボタン(全ゲームで同じ内容。変えてよいのは --gh-width の値だけ。正本は _dev/game-template.html) ===== */
+  :root {
+    --gh-width: 60rem;           /* ★ゲームごと:ゲーム本体の幅(盤ゲーム 32rem、カードゲーム 60rem など)。戻りリンクと見出しをこの幅にそろえる */
+    --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
+    --gh-cta: #B85215; --gh-cta-fg: #FFFFFF;   /* 白文字 4.93:1 */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --gh-btn-bg: #33231A; --gh-btn-fg: #FFF1E0; --gh-btn-line: #6E5443; --gh-cta: #F29A55; --gh-cta-fg: #24170F; }
+  }
+  [hidden] { display: none !important; }
+  .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin-top: 0; margin-bottom: 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+  .site-back.gh-col { padding-left: 0; padding-right: 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+  .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
+  .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
+  .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  button.gbtn { font: inherit; font-size: 1rem; line-height: 1.2; font-weight: 400; min-height: 2.75rem; padding: 0.5rem 1rem; border-radius: 0.5rem;
+    border: 1px solid var(--gh-btn-line); background: var(--gh-btn-bg); color: var(--gh-btn-fg); cursor: pointer; }
+  button.gbtn.gbtn-primary { background: var(--gh-cta); color: var(--gh-cta-fg); border-color: var(--gh-cta); font-weight: 700; }
+  @media (max-width: 480px) {
+    .game-head, .game-actions { gap: 0.4rem; }
+    .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
+  }
+  /* ===== 共通ここまで ===== */
+
+  /* ===== 標準の部品(新しく作るゲームはこの形を使う。ゲームに合わせて調整してよい) ===== */
+  :root {
+    /* 配色(ライト)。文字色は背景とのコントラスト比 4.5:1 以上 */
+    --ink: #3B2416;              /* 文字・見出し・フォーカスリング */
+    --ink-soft: #6E5443;         /* 薄い文字 */
+    --paper: #FFF8EE;            /* 背景 */
+    --paper-warm: #FFEBD2;       /* パネル・帯 */
+    --card: #FFFFFF;             /* カード・入力欄 */
+    --line: #E3CBB0;             /* 枠線 */
+    --spark: #E8792B;            /* 手番・選択中の枠や印(文字色には使わない) */
+    --red-text: #B8321F;         /* 赤スートなど赤系の文字(白 5.98:1) */
+    --focus: var(--ink);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #FFF1E0; --ink-soft: #D9C3AE; --paper: #24170F; --paper-warm: #33231A;
+      --card: #3A281C; --line: #6E5443; --red-text: #FF9C8C; --focus: #F29A55; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); line-height: 1.6;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  button.gbtn:disabled { opacity: 0.5; cursor: default; }
+  /* ルール欄(見出しのすぐ下に開く。最初は閉じる) */
+  .rules-panel { background: var(--paper-warm); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+  .rules-panel h2 { font-size: 1.05rem; margin: 0.75rem 0 0.25rem; }
+  .rules-panel h2:first-child { margin-top: 0; }
+  .rules-panel ul { padding-left: 1.2em; margin: 0.25rem 0; }
+  .rules-panel p { margin: 0.25rem 0; }
+  .seed-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+  .seed-form input { font: inherit; padding: 0.4rem 0.5rem; width: 10em; max-width: 100%; border: 1px solid var(--line); border-radius: 0.4rem; background: var(--card); color: var(--ink); }
+  /* 状況の表示と、対局後の「新しいゲーム」 */
+  .message { min-height: 1.6em; margin: 0 0 0.75rem; }
+  .game-over { display: flex; margin: 0.75rem 0; }
+  main { padding-bottom: 1.5rem; }
+
+  /* ===== ゲーム固有のスタイル ===== */
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .status { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0 0 0.5rem; font-size: 0.95rem; }
+  .badge { display: inline-block; padding: 0.1rem 0.6rem; border: 2px solid var(--spark); border-radius: 1rem; font-weight: 700; font-size: 0.9rem; }
+  .opponents { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; margin: 0 0 0.75rem; }
+  .opp { min-width: 0; padding: 0.4rem 0.5rem; border: 1px solid var(--line); border-radius: 0.5rem; background: var(--card); font-size: 0.85rem; line-height: 1.45; }
+  .opp.turn { border: 2px solid var(--spark); padding: calc(0.4rem - 1px) calc(0.5rem - 1px); }
+  .opp .name { font-weight: 700; }
+  .opp .soft, .soft { color: var(--ink-soft); }
+  .opp .act { overflow-wrap: anywhere; }
+  .field { background: var(--paper-warm); border-radius: 0.5rem; padding: 0.6rem 0.75rem; margin: 0 0 0.75rem; min-height: 6.5rem; }
+  .field h2, .hand-head h2, .result h2 { font-size: 1rem; margin: 0 0 0.35rem; }
+  .field-cards { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; min-height: 3.6rem; }
+  .field-note { font-size: 0.85rem; color: var(--ink-soft); margin: 0.3rem 0 0; }
+  .exchange-log { margin: 0 0 0.75rem; padding: 0.4rem 0.75rem; border-left: 4px solid var(--spark); background: var(--paper-warm); font-size: 0.85rem; }
+  .exchange-log p { margin: 0.1rem 0; }
+  .pcard { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 2.6rem; height: 3.5rem;
+    border: 1px solid var(--line); border-radius: 0.35rem; background: var(--card); font-weight: 700; line-height: 1.1; font-size: 0.95rem; }
+  .red { color: var(--red-text); }
+  .hand-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.25rem 0.75rem; }
+  .hand-head.turn h2::before { content: ""; display: inline-block; width: 0.6rem; height: 0.6rem; margin-right: 0.35rem; border-radius: 50%; background: var(--spark); vertical-align: 0.1em; }
+  .hand { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.6rem 0 0.25rem; }
+  button.card { font: inherit; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 2.75rem; height: 3.75rem; padding: 0;
+    border: 1px solid var(--line); border-radius: 0.4rem; background: var(--card); color: var(--ink); font-weight: 700; line-height: 1.1; font-size: 1rem; cursor: pointer; }
+  button.card.red { color: var(--red-text); }
+  button.card[aria-pressed="true"] { border: 3px solid var(--spark); transform: translateY(-0.35rem); }
+  .card .mark { font-size: 1.05rem; }
+  .controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+  .hint { font-size: 0.85rem; color: var(--ink-soft); margin: 0.35rem 0 0; min-height: 1.4em; }
+  .result { background: var(--paper-warm); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-top: 0.75rem; }
+  .result ol { padding-left: 1.2em; margin: 0.25rem 0 0.75rem; }
+  @media (max-width: 480px) {
+    .opp { font-size: 0.8rem; padding: 0.35rem 0.4rem; }
+    .opp.turn { padding: calc(0.35rem - 1px) calc(0.4rem - 1px); }
+  }
+</style>
+</head>
+<body>
+<!-- ===== 共通ここから(HTML):戻りリンク・見出し・ルール欄・メッセージ ===== -->
+<nav class="site-back gh-col" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
+<header class="game-head gh-col">
+  <h1 id="title"></h1>
+  <div class="game-actions">
+    <button type="button" id="btn-rules" class="gbtn" aria-expanded="false" aria-controls="rules"></button>
+    <button type="button" id="btn-new" class="gbtn gbtn-primary"></button>
+  </div>
+</header>
+<main class="gh-col">
+  <section id="rules" class="rules-panel" hidden aria-labelledby="rules-title">
+    <h2 id="rules-title"></h2>
+    <ul id="rules-list"></ul>
+    <h2 id="keys-title"></h2>
+    <ul id="keys-list"></ul>
+    <h2 id="seed-title"></h2>
+    <p id="seed-current"></p>
+    <p id="seed-desc"></p>
+    <div class="seed-form">
+      <label for="seed-input" id="seed-label"></label>
+      <input id="seed-input" type="text" inputmode="numeric" autocomplete="off">
+      <button type="button" id="btn-seed" class="gbtn"></button>
+    </div>
+  </section>
+  <p id="message" class="message" role="status" aria-live="polite"></p>
+<!-- ===== 共通ここまで(HTML) ===== -->
+
+  <!-- ===== ゲーム本体 ===== -->
+  <section id="game" aria-label="ゲーム">
+    <p class="status"><span id="round-label"></span><span id="rev-badge" class="badge" hidden></span></p>
+    <h2 id="opp-title" class="sr-only"></h2>
+    <div id="opponents" class="opponents" aria-labelledby="opp-title"></div>
+    <div id="exchange-log" class="exchange-log" hidden></div>
+    <section class="field" aria-labelledby="field-title">
+      <h2 id="field-title"></h2>
+      <div id="field-cards" class="field-cards"></div>
+      <p id="field-note" class="field-note"></p>
+    </section>
+    <section aria-labelledby="hand-title">
+      <div id="hand-head" class="hand-head">
+        <h2 id="hand-title"></h2>
+        <span id="hand-status" class="soft"></span>
+      </div>
+      <div id="hand" class="hand" role="group" aria-labelledby="hand-title"></div>
+      <p id="hint" class="hint"></p>
+      <div id="controls" class="controls">
+        <button type="button" id="btn-play" class="gbtn gbtn-primary"></button>
+        <button type="button" id="btn-pass" class="gbtn"></button>
+        <button type="button" id="btn-clear" class="gbtn"></button>
+      </div>
+    </section>
+    <section id="result" class="result" hidden aria-labelledby="result-title">
+      <h2 id="result-title"></h2>
+      <ol id="result-list"></ol>
+      <button type="button" id="btn-next" class="gbtn gbtn-primary"></button>
+    </section>
+  </section>
+
+  <!-- 共通:対局後の「新しいゲーム」(スマホで上に戻らずに始められるように) -->
+  <div class="game-over" id="game-over" hidden>
+    <button type="button" id="btn-new-2" class="gbtn gbtn-primary"></button>
+  </div>
+</main>
+
+<script>
+'use strict';
+
+/* ============================================================
+ * CONFIG:ゲームごとの設定値
+ * ============================================================ */
+const CONFIG = Object.freeze({
+  gameId: 'daifugo',
+  schemaVersion: 1,                   // 保存形式を変えたら上げる(古い保存データは破棄して新しく始める)
+  storageKey: 'wktks.game.daifugo',   // 'wktks.game.' + gameId
+  seedMax: 0xFFFFFFFF,                // シードは0以上の32bit整数
+  playerCount: 4,                     // 0 があなた、1〜3 が CPU1〜CPU3(時計回り)
+  humanIndex: 0,
+  deckSize: 53,                       // 52枚＋ジョーカー1枚。カードの番号は 0〜52
+  jokerId: 52,
+  startCardId: 26,                    // ♦3(スート2の0番)。1ラウンド目の先手
+  eightRank: 5,                       // 強さの番号で 5 が「8」(3 が 0、2 が 12)
+  stairTopRank: 11,                   // 階段に使える最大の強さの番号(11 が A。2 は階段に使えない)
+  maxGroup: 5,                        // 同じ数字の組の最大枚数(4枚＋ジョーカー)
+  revolutionGroup: 4,                 // 同じ数字この枚数以上で革命
+  revolutionStair: 5,                 // 階段この枚数以上で革命
+  maxRounds: 99999,                   // 保存データの上限(異常なデータで固まらないように)
+  maxMoves: 2000,                     // 1ラウンドの手数の上限(実際は 53枚×数回のパス で収まる)
+  cpuSaveUntil: 4,                    // CPU は手札がこの枚数以下になるまで、2・ジョーカーを温存する
+  cpuDelayMs: 900,                    // CPU の手番の間(目で追える長さ)
+  cpuGiveDelayMs: 600,
+});
+
+/* ============================================================
+ * TEXT:画面の文言
+ * ============================================================ */
+const TEXT = Object.freeze({
+  title: '大富豪',
+  rulesButton: 'ルール (R)',
+  newGame: '新しいゲーム (N)',
+  rulesTitle: 'ルール',
+  rules: [
+    '4人（あなた＋CPU3人）で遊びます。52枚＋ジョーカー1枚を、13〜14枚ずつ配ります。',
+    '強さは 3＜4＜…＜K＜A＜2＜ジョーカー です。',
+    '出せる組は、1枚・同じ数字2〜4枚・階段（同じスートの連番3枚以上。3〜Aの範囲で、2は使えません）です。',
+    'ジョーカーは組の中では好きな札の代わりになります。1枚で出すと、いちばん強い札です。',
+    '場と同じ形・同じ枚数で、より強い組だけを出せます（階段はいちばん小さい数字で比べます）。場が空のときは、好きな組を出せます。',
+    '出せる札があってもパスできます（場が空のときはパスできません）。パスしても、次の手番では出せます。',
+    '最後に出した人以外が全員続けてパスすると場が流れ、最後に出した人から始めます（その人が上がっていたら次の人から）。',
+    '革命：同じ数字4枚以上か、5枚以上の階段を出すと、強さが逆になります（ジョーカー1枚出しはいちばん強いままです）。もう一度革命が起きると元に戻ります。',
+    '8切り：8を含む組を出すと場が流れ、出した人から始めます。',
+    '手札を出し切った順に、大富豪・富豪・貧民・大貧民になります。身分を持ち越して、何ラウンドでも続けられます。',
+    '2ラウンド目からはカード交換があります。大貧民は大富豪にいちばん強い2枚、貧民は富豪にいちばん強い1枚を渡し、大富豪・富豪は好きな札を同じ枚数返します。',
+    '1ラウンド目は♦3を持つ人、2ラウンド目からは大貧民が先手です。',
+  ],
+  keysTitle: 'キーボード操作',
+  keys: [
+    '← →: 手札の札を移る',
+    'Space: 札を選ぶ／選ぶのをやめる',
+    'Enter: 選んだ札を出す（カード交換では「渡す」、ラウンドの終わりには「次のラウンド」）',
+    'P: パス',
+    'N: 新しいゲーム',
+    'R: ルールの表示/非表示',
+    'Esc: ルールを閉じる',
+  ],
+  seedTitle: 'シード',
+  seedCurrent: (seed) => `現在のシード: ${seed}`,
+  seedDesc: '同じシードで同じ操作をすると、同じ展開になります。',
+  seedLabel: 'シード（整数）',
+  seedButton: 'このシードで新しいゲーム',
+  seedInvalid: 'シードには0以上の整数を入れてください。',
+  newGameStarted: (seed) => `新しいゲームを始めました（シード ${seed}）。`,
+  restored: '中断したゲームを再開しました。',
+  corrupted: '保存データを読み込めなかったため、新しいゲームを始めました。',
+  // ゲーム固有
+  roundLabel: (n) => `ラウンド${n}`,
+  revolution: '革命中（強さが逆）',
+  oppTitle: '相手',
+  fieldTitle: '場',
+  fieldEmpty: '場は空です。',
+  fieldBy: (name, rev) => `${name}が出しました。${rev ? '革命中なので、より弱い組を出せます。' : 'より強い組を出せます。'}`,
+  fieldLead: (name) => `${name}が好きな組を出せます。`,
+  handTitle: (n) => `あなたの手札（${n}枚）`,
+  yourTitle: (t) => `身分：${t}`,
+  cardsLeft: (n) => `残り${n}枚`,
+  placed: (k) => `${k}位で上がり`,
+  turnMark: '（手番）',
+  actPass: 'パス',
+  actNone: '—',
+  play: '出す (Enter)',
+  give: '渡す (Enter)',
+  pass: 'パス (P)',
+  clear: '選び直す',
+  next: '次のラウンド (Enter)',
+  resultTitle: (n) => `ラウンド${n}の結果`,
+  resultLine: (title, name) => `${title}：${name}`,
+  exchangeLine: (from, ft, to, tt, cards) => `${from}（${ft}）→ ${to}（${tt}）：${cards}`,
+  exchangeTitle: 'カード交換',
+  selNone: '出す札を選んでください。',
+  selGiveNone: (n) => `返す札を${n}枚選んでください。`,
+  selGiveCount: (k, n) => `${k}枚選んでいます（${n}枚選びます）。`,
+  selOk: (cards, kind) => `${cards}（${kind}）を出せます。`,
+  selNg: (cards) => `${cards} は今は出せません。`,
+  selBad: (cards) => `${cards} は組になっていません。`,
+  kindSingle: '1枚',
+  kindGroup: (n) => `同じ数字${n}枚`,
+  kindStair: (n) => `階段${n}枚`,
+  notYourTurn: 'CPUの手番です。',
+  youFinished: (k) => `あなたは${k}位で上がりました。ほかの人が終わるまで待ちます。`,
+  evPlay: (name, cards) => `${name}が ${cards} を出しました。`,
+  evPass: (name) => `${name}はパスしました。`,
+  evRevOn: '革命です。強さが逆になりました。',
+  evRevOff: 'もう一度革命が起き、強さが元に戻りました。',
+  evEight: '8切りで場が流れました。',
+  evCleared: '全員がパスしたので、場が流れました。',
+  evLeader: (name) => `${name}から始めます。`,
+  evOut: (name, k) => `${name}が${k}位で上がりました。`,
+  evRoundOver: (n) => `ラウンド${n}が終わりました。`,
+  evRound: (n) => `ラウンド${n}を始めました。`,
+  evGive: (from, to, cards) => `${from}が${to}に ${cards} を返しました。`,
+  yourTurn: 'あなたの手番です。',
+  yourLead: 'あなたの手番です。場が空なので、好きな組を出せます。',
+  askGive: (title, to, n) => `${title}なので、${to}に返す札を${n}枚選んでください。`,
+  invalidPlay: 'その組み合わせは出せません。',
+  noPassOnLead: '場が空のときはパスできません。',
+});
+
+/* ============================================================
+ * rng:シード付き疑似乱数(ゲームロジックでは、シードを指定できない標準の乱数関数を使わない)
+ * DOM に依存させない
+ * ============================================================ */
+const rng = (() => {
+  // mulberry32:シードから決まった順の乱数を作る
+  // next.state() で内部の状態を取り出せる(状態に保存し、次のラウンドで続きから引くため)
+  function make(seed) {
+    let a = seed >>> 0;
+    function next() {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+    next.state = () => a;
+    return next;
+  }
+  function shuffle(array, next) {
+    const a = array.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(next() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  return Object.freeze({ make, shuffle });
+})();
+
+/* ============================================================
+ * content:表示名など差し替えできるデータ(素のデータ。rules は番号だけを扱う)
+ * ============================================================ */
+const content = Object.freeze({
+  suits: [
+    { mark: '♠', name: 'スペード', red: false },
+    { mark: '♥', name: 'ハート', red: true },
+    { mark: '♦', name: 'ダイヤ', red: true },
+    { mark: '♣', name: 'クラブ', red: false },
+  ],
+  ranks: ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'],   // 強さの番号 0〜12 の表示
+  jokerLabel: 'JK',
+  jokerName: 'ジョーカー',
+  titles: ['大富豪', '富豪', '貧民', '大貧民'],
+  playerNames: ['あなた', 'CPU1', 'CPU2', 'CPU3'],
+});
+
+/* ============================================================
+ * rules:初期状態・合法手・操作の適用・勝敗・保存データの検証
+ * カードは番号 0〜52。0〜51 は「スート = floor(番号/13)、強さの番号 = 番号 % 13」(0 が 3、12 が 2)、52 がジョーカー
+ * 状態は JSON にそのまま変換できる素のデータ。受け取った状態は書き換えず、新しい状態を返す
+ * DOM に依存させない
+ * ============================================================ */
+const rules = (() => {
+  const P = CONFIG.playerCount;
+  const JOKER = CONFIG.jokerId;
+  const PHASES = ['exchange', 'play', 'roundEnd'];
+  const TYPES = ['single', 'group', 'stair'];
+
+  const isJoker = (id) => id === JOKER;
+  const rankOf = (id) => (id === JOKER ? -1 : id % 13);
+  const suitOf = (id) => (id === JOKER ? -1 : Math.floor(id / 13));
+  // 並べ替え用のキー(弱い順。同じ数字はスート順)。ジョーカーは最後
+  const keyOf = (id) => (id === JOKER ? 1000 : rankOf(id) * 4 + suitOf(id));
+  const sortCards = (cards) => cards.slice().sort((a, b) => keyOf(a) - keyOf(b));
+  const nulls = () => Array.from({ length: P }, () => null);
+
+  // 組の形を判定する。組にならなければ null
+  // 階段にジョーカーが入るときは、当てはめ方が複数ありうる。いつも「今の強さでいちばん強い当てはめ」を選ぶ
+  // (出す側にとって損がなく、場の値が一意に決まるため)
+  function analyze(cards, revolution) {
+    if (!Array.isArray(cards)) return null;
+    const n = cards.length;
+    if (n < 1 || n > CONFIG.stairTopRank + 1) return null;
+    const nat = cards.filter((c) => !isJoker(c));
+    const natRanks = nat.map(rankOf);
+    const eight = natRanks.includes(CONFIG.eightRank);   // 本物の8だけを数える
+    if (n === 1) {
+      if (isJoker(cards[0])) return { type: 'single', count: 1, rank: 13, suit: -1, jokerSingle: true, eight: false, revolution: false };
+      return { type: 'single', count: 1, rank: natRanks[0], suit: -1, jokerSingle: false, eight, revolution: false };
+    }
+    if (nat.length === 0) return null;
+    if (natRanks.every((r) => r === natRanks[0])) {
+      if (n > CONFIG.maxGroup) return null;
+      return { type: 'group', count: n, rank: natRanks[0], suit: -1, jokerSingle: false, eight, revolution: n >= CONFIG.revolutionGroup };
+    }
+    if (n < 3) return null;
+    const suit = suitOf(nat[0]);
+    if (!nat.every((c) => suitOf(c) === suit)) return null;
+    if (new Set(natRanks).size !== natRanks.length) return null;
+    if (natRanks.some((r) => r > CONFIG.stairTopRank)) return null;
+    const minR = Math.min(...natRanks);
+    const maxR = Math.max(...natRanks);
+    // 長さ n の連番の窓 [low, low+n-1] に本物の札がすべて入り、空きをジョーカーで埋める
+    const lowMin = Math.max(0, maxR - n + 1);
+    const lowMax = Math.min(minR, CONFIG.stairTopRank - n + 1);
+    if (lowMin > lowMax) return null;
+    const low = revolution ? lowMin : lowMax;
+    return { type: 'stair', count: n, rank: low, suit, jokerSingle: false, eight, revolution: n >= CONFIG.revolutionStair };
+  }
+
+  // 場の組に勝てるか(場が空なら何でも出せる)
+  function beats(combo, field, revolution) {
+    if (!combo) return false;
+    if (!field) return true;
+    if (field.jokerSingle) return false;
+    if (combo.type !== field.type || combo.count !== field.count) return false;
+    if (combo.jokerSingle) return true;
+    return revolution ? combo.rank < field.rank : combo.rank > field.rank;
+  }
+
+  // 手札から作れる組の候補を並べる(CPU の思考と「出せる札があるか」の判定に使う)
+  // 同じ数字の組では、どのスートを使っても強さは同じなので、並べ替えた手札の前から取る
+  function candidates(hand) {
+    const out = [];
+    const hasJoker = hand.includes(JOKER);
+    const byRank = Array.from({ length: 13 }, () => []);
+    for (const c of sortCards(hand)) if (!isJoker(c)) byRank[rankOf(c)].push(c);
+    for (const c of hand) out.push([c]);
+    for (let r = 0; r < 13; r++) {
+      const cs = byRank[r];
+      for (let s = 2; s <= cs.length; s++) out.push(cs.slice(0, s));
+      if (hasJoker) for (let s = 1; s <= cs.length && s + 1 <= CONFIG.maxGroup; s++) out.push([...cs.slice(0, s), JOKER]);
+    }
+    for (let suit = 0; suit < 4; suit++) {
+      const have = new Set(hand.filter((c) => suitOf(c) === suit).map(rankOf));
+      for (let low = 0; low <= CONFIG.stairTopRank - 2; low++) {
+        let missing = 0;
+        const cards = [];
+        for (let r = low; r <= CONFIG.stairTopRank; r++) {
+          if (have.has(r)) cards.push(suit * 13 + r);
+          else { missing++; if (missing > (hasJoker ? 1 : 0)) break; }
+          const len = r - low + 1;
+          if (len >= 3) out.push(missing ? [...cards, JOKER] : cards.slice());
+        }
+      }
+    }
+    return out;
+  }
+
+  function legalPlays(state, p) {
+    if (state.phase !== 'play' || state.turn !== p) return [];
+    const result = [];
+    const seen = new Set();
+    for (const cards of candidates(state.hands[p])) {
+      const combo = analyze(cards, state.revolution);
+      if (!combo || !beats(combo, state.field, state.revolution)) continue;
+      const key = sortCards(cards).join(',');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push({ cards: sortCards(cards), combo });
+    }
+    return result;
+  }
+
+  const isActive = (state, p) => p !== null && !state.finished.includes(p);
+  function nextActive(state, p) {
+    for (let i = 1; i <= P; i++) {
+      const q = (p + i) % P;
+      if (isActive(state, q)) return q;
+    }
+    return p;
+  }
+  // 今、操作する人(カード交換では返す人、対局中は手番の人)。ラウンドの終わりは null
+  function currentActor(state) {
+    if (state.phase === 'exchange') return state.exchange.pending[0].from;
+    if (state.phase === 'play') return state.turn;
+    return null;
+  }
+
+  function event(kind, player, cards, extra) {
+    return { kind, player, cards: cards || [], revolution: false, eight: false, cleared: false, out: false, roundOver: false, ...extra };
+  }
+
+  // ラウンドを始める(配る → 2ラウンド目からはカード交換の準備)
+  function startRound(prev) {
+    const r = rng.make(prev.rngState);
+    const deck = rng.shuffle(Array.from({ length: CONFIG.deckSize }, (_, i) => i), r);
+    const dealer = Math.floor(r() * P);
+    let hands = Array.from({ length: P }, () => []);
+    deck.forEach((c, i) => { hands[(dealer + i) % P].push(c); });
+    const round = prev.round + 1;
+    // 前のラウンドの上がり順 finished[k] の人が、身分 k になる
+    const titles = round === 1 ? nulls() : Array.from({ length: P }, (_, p) => prev.finished.indexOf(p));
+    const log = [];
+    const pending = [];
+    if (round > 1) {
+      const who = (t) => titles.indexOf(t);
+      // [渡す人の身分, 受け取る人の身分, 枚数]。貧しい側はいちばん強い札を自動で渡す
+      for (const [fromT, toT, count] of [[3, 0, 2], [2, 1, 1]]) {
+        const from = who(fromT), to = who(toT);
+        const cards = sortCards(hands[from]).slice(-count);
+        hands = hands.map((h, i) => (i === from ? h.filter((c) => !cards.includes(c)) : i === to ? [...h, ...cards] : h));
+        log.push({ from, to, cards: sortCards(cards) });
+        pending.push({ from: to, to: from, count });   // 豊かな側が、同じ枚数を返す番
+      }
+    }
+    hands = hands.map(sortCards);
+    const turn = round === 1 ? hands.findIndex((h) => h.includes(CONFIG.startCardId)) : titles.indexOf(3);
+    return {
+      schemaVersion: CONFIG.schemaVersion,
+      seed: prev.seed,
+      rngState: r.state(),
+      round,
+      phase: pending.length ? 'exchange' : 'play',
+      hands,
+      titles,
+      turn,
+      field: null,
+      lastPlayer: null,
+      passes: 0,
+      revolution: false,
+      finished: [],
+      lastActions: nulls(),
+      exchange: { pending, log },
+      moves: 0,
+      lastEvent: event('round', -1, []),
+    };
+  }
+
+  function newGame(seed) {
+    return startRound({ seed: seed >>> 0, rngState: seed >>> 0, round: 0, finished: [] });
+  }
+
+  function endRound(state, ev) {
+    const finished = state.finished.slice();
+    for (let p = 0; p < P; p++) if (!finished.includes(p)) finished.push(p);
+    return { ...state, finished, phase: 'roundEnd', field: null, lastPlayer: null, passes: 0, lastEvent: { ...ev, roundOver: true } };
+  }
+
+  function validCardList(cards, hand, min, max) {
+    return Array.isArray(cards) && cards.length >= min && cards.length <= max
+      && cards.every((c) => Number.isInteger(c) && hand.includes(c))
+      && new Set(cards).size === cards.length;
+  }
+
+  function applyPlay(state, cards) {
+    const p = state.turn;
+    if (!validCardList(cards, state.hands[p], 1, CONFIG.stairTopRank + 1)) return state;
+    const combo = analyze(cards, state.revolution);
+    if (!beats(combo, state.field, state.revolution)) return state;
+    const played = sortCards(cards);
+    const hands = state.hands.map((h, i) => (i === p ? h.filter((c) => !cards.includes(c)) : h));
+    const out = hands[p].length === 0;
+    const finished = out ? [...state.finished, p] : state.finished;
+    const lastActions = state.lastActions.slice();
+    lastActions[p] = { type: 'play', cards: played };
+    let next = { ...state, hands, finished, lastActions, moves: state.moves + 1,
+      revolution: combo.revolution ? !state.revolution : state.revolution };
+    const ev = event('play', p, played, { revolution: combo.revolution, eight: combo.eight, out });
+    if (P - finished.length <= 1) return endRound(next, ev);
+    if (combo.eight) {
+      // 8切り:場を流し、出した人から(上がっていたら次の人から)
+      return { ...next, field: null, lastPlayer: null, passes: 0, lastActions: nulls(),
+        turn: out ? nextActive(next, p) : p, lastEvent: { ...ev, cleared: true } };
+    }
+    const field = { cards: played, type: combo.type, count: combo.count, rank: combo.rank, suit: combo.suit, jokerSingle: combo.jokerSingle, by: p };
+    return { ...next, field, lastPlayer: p, passes: 0, turn: nextActive(next, p), lastEvent: ev };
+  }
+
+  function applyPass(state) {
+    if (!state.field) return state;   // 場が空のときはパスできない
+    const p = state.turn;
+    const passes = state.passes + 1;
+    const active = P - state.finished.length;
+    // 最後に出した人がまだ残っていれば、その人以外の全員。上がっていれば、残り全員
+    const need = active - (isActive(state, state.lastPlayer) ? 1 : 0);
+    const lastActions = state.lastActions.slice();
+    lastActions[p] = { type: 'pass', cards: [] };
+    const next = { ...state, passes, lastActions, moves: state.moves + 1, turn: nextActive(state, p) };
+    if (passes >= need) {
+      return { ...next, field: null, lastPlayer: null, passes: 0, lastActions: nulls(),
+        lastEvent: event('pass', p, [], { cleared: true }) };
+    }
+    return { ...next, lastEvent: event('pass', p, []) };
+  }
+
+  function applyGive(state, cards) {
+    const pend = state.exchange.pending[0];
+    if (!validCardList(cards, state.hands[pend.from], pend.count, pend.count)) return state;
+    const given = sortCards(cards);
+    const hands = state.hands.map((h, i) => (i === pend.from ? h.filter((c) => !cards.includes(c)) : i === pend.to ? sortCards([...h, ...given]) : h));
+    const pending = state.exchange.pending.slice(1);
+    return { ...state, hands, phase: pending.length ? 'exchange' : 'play',
+      exchange: { pending, log: [...state.exchange.log, { from: pend.from, to: pend.to, cards: given }] },
+      lastEvent: event('give', pend.from, given) };
+  }
+
+  function apply(state, action) {
+    if (!action || typeof action !== 'object') return state;
+    if (state.phase === 'play' && action.type === 'play') return applyPlay(state, action.cards);
+    if (state.phase === 'play' && action.type === 'pass') return applyPass(state);
+    if (state.phase === 'exchange' && action.type === 'give') return applyGive(state, action.cards);
+    if (state.phase === 'roundEnd' && action.type === 'nextRound') {
+      if (state.round >= CONFIG.maxRounds) return newGame(state.seed);
+      return startRound(state);
+    }
+    return state;
+  }
+
+  function isOver(state) { return state.phase === 'roundEnd'; }
+
+  // ---- 保存データの検証:形が違うもの・上限を超えるものは受け付けない ----
+  const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+  const isInt = (x, lo, hi) => Number.isInteger(x) && x >= lo && x <= hi;
+  const isCardList = (a, max) => Array.isArray(a) && a.length <= max && a.every((c) => isInt(c, 0, CONFIG.deckSize - 1)) && new Set(a).size === a.length;
+  const isPlayer = (x) => isInt(x, 0, P - 1);
+
+  function validate(d) {
+    if (!isObj(d) || d.schemaVersion !== CONFIG.schemaVersion) return false;
+    if (!isInt(d.seed, 0, CONFIG.seedMax) || !isInt(d.rngState, 0, CONFIG.seedMax)) return false;
+    if (!isInt(d.round, 1, CONFIG.maxRounds) || !PHASES.includes(d.phase)) return false;
+    if (!Array.isArray(d.hands) || d.hands.length !== P || !d.hands.every((h) => isCardList(h, CONFIG.deckSize))) return false;
+    const all = d.hands.flat();
+    if (new Set(all).size !== all.length) return false;
+    if (!Array.isArray(d.titles) || d.titles.length !== P) return false;
+    if (d.round === 1 ? !d.titles.every((t) => t === null) : !(d.titles.every((t) => isInt(t, 0, P - 1)) && new Set(d.titles).size === P)) return false;
+    if (!isPlayer(d.turn) || typeof d.revolution !== 'boolean' || !isInt(d.passes, 0, P) || !isInt(d.moves, 0, CONFIG.maxMoves)) return false;
+    if (!(d.lastPlayer === null || isPlayer(d.lastPlayer))) return false;
+    if (!Array.isArray(d.finished) || d.finished.length > P || !d.finished.every(isPlayer) || new Set(d.finished).size !== d.finished.length) return false;
+    if (d.phase !== 'roundEnd' && !d.finished.every((p) => d.hands[p].length === 0)) return false;
+    if (d.field !== null) {
+      const f = d.field;
+      if (!isObj(f) || !isCardList(f.cards, CONFIG.stairTopRank + 1) || !TYPES.includes(f.type) || !isPlayer(f.by)) return false;
+      if (f.cards.some((c) => all.includes(c))) return false;
+      const c = analyze(f.cards, d.revolution);
+      // 階段の値はジョーカーの当てはめ方で変わる(出したときの革命の向きで決まる)ので、階段以外だけ値を照らし合わせる
+      if (!c || c.type !== f.type || c.count !== f.count || (f.type !== 'stair' && f.rank !== c.rank)) return false;
+      if (!isInt(f.rank, 0, 13) || !isInt(f.suit, -1, 3) || typeof f.jokerSingle !== 'boolean') return false;
+    }
+    if (!Array.isArray(d.lastActions) || d.lastActions.length !== P) return false;
+    if (!d.lastActions.every((a) => a === null || (isObj(a) && (a.type === 'play' || a.type === 'pass') && isCardList(a.cards, CONFIG.stairTopRank + 1)))) return false;
+    const ex = d.exchange;
+    if (!isObj(ex) || !Array.isArray(ex.pending) || !Array.isArray(ex.log) || ex.pending.length > 2 || ex.log.length > 4) return false;
+    if (!ex.pending.every((x) => isObj(x) && isPlayer(x.from) && isPlayer(x.to) && isInt(x.count, 1, 2))) return false;
+    if (!ex.log.every((x) => isObj(x) && isPlayer(x.from) && isPlayer(x.to) && isCardList(x.cards, 2))) return false;
+    const e = d.lastEvent;
+    if (!isObj(e) || !['round', 'play', 'pass', 'give'].includes(e.kind) || !isInt(e.player, -1, P - 1) || !isCardList(e.cards, CONFIG.stairTopRank + 1)) return false;
+    if (!['revolution', 'eight', 'cleared', 'out', 'roundOver'].every((k) => typeof e[k] === 'boolean')) return false;
+    // 局面ごとの約束
+    if (d.phase === 'exchange' && ex.pending.length === 0) return false;
+    if (d.phase === 'play' && !isActive(d, d.turn)) return false;
+    if (d.phase === 'roundEnd' && d.finished.length !== P) return false;
+    return true;
+  }
+
+  return Object.freeze({ newGame, apply, isOver, validate, analyze, beats, legalPlays, currentActor, nextActive,
+    sortCards, isJoker, rankOf, suitOf });
+})();
+
+/* ============================================================
+ * ai:CPU の手の選択。合法手は rules から受け取り、ルールを作り直さない
+ * 状態を書き換えない。同点のときは、状態から決まるシード付き乱数で選ぶ
+ * DOM に依存させない
+ * ============================================================ */
+const ai = (() => {
+  // 手札の強さの平均(本物の札の強さの番号 0〜12)。革命を起こしたいかの判断に使う
+  function averageRank(hand) {
+    const ranks = hand.filter((c) => !rules.isJoker(c)).map(rules.rankOf);
+    return ranks.length ? ranks.reduce((a, b) => a + b, 0) / ranks.length : 12;
+  }
+
+  function chooseGive(state) {
+    const pend = state.exchange.pending[0];
+    // いちばん弱い札を返す(革命はラウンドの初めには起きていないので、ふつうの強さで弱い順)
+    return { type: 'give', cards: rules.sortCards(state.hands[pend.from]).slice(0, pend.count) };
+  }
+
+  function choosePlay(state) {
+    const p = state.turn;
+    const hand = state.hands[p];
+    const rev = state.revolution;
+    const plays = rules.legalPlays(state, p);
+    if (plays.length === 0) return { type: 'pass' };
+    // 出し切れるなら出す
+    const finishing = plays.find((x) => x.cards.length === hand.length);
+    if (finishing) return { type: 'play', cards: finishing.cards };
+
+    const avg = averageRank(hand);
+    const wantRevolution = rev ? avg >= 6.5 : avg < 5.5;   // 手札が弱めなら革命したい(革命中は、強めなら戻したい)
+    const strongRank = rev ? 0 : 12;                        // 今いちばん強い数字(ふつうは 2、革命中は 3)
+    const saving = hand.length > CONFIG.cpuSaveUntil;
+    const counts = new Array(13).fill(0);
+    for (const c of hand) if (!rules.isJoker(c)) counts[rules.rankOf(c)]++;
+
+    let best = [];
+    let bestScore = Infinity;
+    for (const { cards, combo } of plays) {
+      if (combo.revolution && !wantRevolution) continue;
+      // 点数が小さいほど良い。「今の強さで弱い組」を先に使う
+      let score = combo.jokerSingle ? 20 : (rev ? 12 - combo.rank : combo.rank);
+      const usesStrong = cards.some((c) => rules.isJoker(c) || rules.rankOf(c) === strongRank);
+      if (usesStrong && saving) score += 30;
+      if (combo.type !== 'stair' && !combo.jokerSingle) {
+        const used = cards.filter((c) => !rules.isJoker(c)).length;
+        if (counts[combo.rank] > used) score += 3;          // 同じ数字の組を崩さない
+      }
+      if (!state.field) score -= combo.count * 0.5;          // 場が空なら、まとめて出す
+      if (combo.revolution) score -= 10;
+      if (score < bestScore - 1e-9) { bestScore = score; best = [cards]; }
+      else if (Math.abs(score - bestScore) < 1e-9) best.push(cards);
+    }
+    if (best.length === 0) return state.field ? { type: 'pass' } : { type: 'play', cards: plays[0].cards };
+    // 場があり、強い札を使わないと出せないときは、温存してパスする
+    if (state.field && bestScore >= 30 && saving) return { type: 'pass' };
+    const tie = rng.make((state.rngState ^ Math.imul(state.moves + 1 + p * 101, 0x9E3779B1)) >>> 0);
+    return { type: 'play', cards: best[Math.floor(tie() * best.length)] };
+  }
+
+  function choose(state) {
+    if (state.phase === 'exchange') return chooseGive(state);
+    if (state.phase === 'play') return choosePlay(state);
+    return null;
+  }
+  return Object.freeze({ choose });
+})();
+
+/* ============================================================
+ * storage:localStorage の読み書き。読み込んだら必ず rules.validate を通す
+ * ============================================================ */
+const storage = (() => {
+  function load() {
+    let raw;
+    try { raw = localStorage.getItem(CONFIG.storageKey); } catch (e) { return { state: null, status: 'unavailable' }; }
+    if (raw === null) return { state: null, status: 'none' };
+    try {
+      const data = JSON.parse(raw);
+      if (rules.validate(data)) return { state: data, status: 'ok' };
+    } catch (e) { /* 構文エラーは下で破棄 */ }
+    try { localStorage.removeItem(CONFIG.storageKey); } catch (e) { /* 何もしない */ }
+    return { state: null, status: 'corrupted' };
+  }
+  function save(state) {
+    try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(state)); } catch (e) { /* 保存できなくても遊べる */ }
+  }
+  return Object.freeze({ load, save });
+})();
+
+/* ============================================================
+ * ui:描画とイベント処理。状態は直接書き換えず、必ず rules を通す
+ * 文字は textContent で入れる(HTML文字列を差し込む書き方は使わない)
+ * ============================================================ */
+const ui = (() => {
+  const $ = (id) => document.getElementById(id);
+  const HUMAN = CONFIG.humanIndex;
+  let state = null;
+  let selected = new Set();   // 選んでいる札(画面だけの状態。保存しない)
+  let cpuTimer = null;
+
+  function freshSeed() { return ((Date.now() ^ Math.floor(performance.now() * 1000)) >>> 0); }
+  function setMessage(text) { $('message').textContent = text; }
+  function clearChildren(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+  function fillList(ul, lines) {
+    clearChildren(ul);
+    for (const line of lines) { const li = document.createElement('li'); li.textContent = line; ul.appendChild(li); }
+  }
+  const nameOf = (p) => content.playerNames[p];
+  function cardLabel(id) {
+    if (rules.isJoker(id)) return content.jokerLabel;
+    return content.suits[rules.suitOf(id)].mark + content.ranks[rules.rankOf(id)];
+  }
+  const cardsText = (cards) => cards.map(cardLabel).join('・');
+  function isRed(id) { return !rules.isJoker(id) && content.suits[rules.suitOf(id)].red; }
+  function cardFace(el, id) {
+    // 上に記号、下に数字(色だけに頼らず、記号でもスートが分かるように)
+    const top = document.createElement('span');
+    const bottom = document.createElement('span');
+    if (rules.isJoker(id)) { top.textContent = '★'; bottom.textContent = content.jokerLabel; }
+    else { top.textContent = content.suits[rules.suitOf(id)].mark; bottom.textContent = content.ranks[rules.rankOf(id)]; }
+    top.className = 'mark';
+    top.setAttribute('aria-hidden', 'true');
+    bottom.setAttribute('aria-hidden', 'true');
+    el.appendChild(top);
+    el.appendChild(bottom);
+    if (isRed(id)) el.classList.add('red');
+  }
+  function cardAria(id) {
+    if (rules.isJoker(id)) return content.jokerName;
+    return content.suits[rules.suitOf(id)].mark + content.ranks[rules.rankOf(id)];
+  }
+  function kindText(combo) {
+    if (combo.type === 'single') return TEXT.kindSingle;
+    if (combo.type === 'group') return TEXT.kindGroup(combo.count);
+    return TEXT.kindStair(combo.count);
+  }
+
+  function fillTexts() {
+    document.title = TEXT.title + ' | 定番ゲーム | わくてかスタディ研究所';
+    $('title').textContent = TEXT.title;
+    $('btn-rules').textContent = TEXT.rulesButton;
+    $('btn-new').textContent = TEXT.newGame;
+    $('btn-new-2').textContent = TEXT.newGame;
+    $('rules-title').textContent = TEXT.rulesTitle;
+    fillList($('rules-list'), TEXT.rules);
+    $('keys-title').textContent = TEXT.keysTitle;
+    fillList($('keys-list'), TEXT.keys);
+    $('seed-title').textContent = TEXT.seedTitle;
+    $('seed-desc').textContent = TEXT.seedDesc;
+    $('seed-label').textContent = TEXT.seedLabel;
+    $('btn-seed').textContent = TEXT.seedButton;
+    $('opp-title').textContent = TEXT.oppTitle;
+    $('field-title').textContent = TEXT.fieldTitle;
+    $('btn-pass').textContent = TEXT.pass;
+    $('btn-clear').textContent = TEXT.clear;
+    $('btn-next').textContent = TEXT.next;
+  }
+
+  const actor = () => rules.currentActor(state);
+  const humanGiving = () => state.phase === 'exchange' && actor() === HUMAN;
+  const humanPlaying = () => state.phase === 'play' && state.turn === HUMAN;
+
+  function renderOpponents() {
+    const box = $('opponents');
+    clearChildren(box);
+    for (let p = 0; p < CONFIG.playerCount; p++) {
+      if (p === HUMAN) continue;
+      const div = document.createElement('div');
+      div.className = 'opp' + (actor() === p ? ' turn' : '');
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = nameOf(p) + (actor() === p ? TEXT.turnMark : '');
+      div.appendChild(name);
+      if (state.titles[p] !== null) {
+        const t = document.createElement('div');
+        t.textContent = content.titles[state.titles[p]];
+        div.appendChild(t);
+      }
+      const left = document.createElement('div');
+      const place = state.finished.indexOf(p);
+      left.textContent = place >= 0 && state.hands[p].length === 0 ? TEXT.placed(place + 1) : TEXT.cardsLeft(state.hands[p].length);
+      div.appendChild(left);
+      const act = document.createElement('div');
+      act.className = 'act soft';
+      const a = state.lastActions[p];
+      act.textContent = !a ? TEXT.actNone : a.type === 'pass' ? TEXT.actPass : cardsText(a.cards);
+      div.appendChild(act);
+      box.appendChild(div);
+    }
+  }
+
+  function renderField() {
+    const box = $('field-cards');
+    clearChildren(box);
+    if (state.field) {
+      for (const id of state.field.cards) {
+        const s = document.createElement('span');
+        s.className = 'pcard';
+        s.setAttribute('role', 'img');
+        s.setAttribute('aria-label', cardAria(id));
+        cardFace(s, id);
+        box.appendChild(s);
+      }
+      $('field-note').textContent = TEXT.fieldBy(nameOf(state.field.by), state.revolution);
+    } else {
+      const s = document.createElement('span');
+      s.className = 'soft';
+      s.textContent = TEXT.fieldEmpty;
+      box.appendChild(s);
+      $('field-note').textContent = state.phase === 'play' ? TEXT.fieldLead(nameOf(state.turn)) : '';
+    }
+  }
+
+  function renderExchange() {
+    const box = $('exchange-log');
+    const log = state.exchange.log;
+    box.hidden = state.round === 1 || log.length === 0 || state.phase === 'roundEnd';
+    clearChildren(box);
+    if (box.hidden) return;
+    const h = document.createElement('p');
+    h.textContent = TEXT.exchangeTitle;
+    h.style.fontWeight = '700';
+    box.appendChild(h);
+    for (const x of log) {
+      const line = document.createElement('p');
+      line.textContent = TEXT.exchangeLine(nameOf(x.from), content.titles[state.titles[x.from]], nameOf(x.to), content.titles[state.titles[x.to]], cardsText(x.cards));
+      box.appendChild(line);
+    }
+  }
+
+  function renderHand(focusIndex) {
+    const hand = state.hands[HUMAN];
+    for (const id of [...selected]) if (!hand.includes(id)) selected.delete(id);
+    const box = $('hand');
+    clearChildren(box);
+    hand.forEach((id) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'card';
+      b.dataset.card = String(id);
+      b.setAttribute('aria-pressed', String(selected.has(id)));
+      b.setAttribute('aria-label', cardAria(id));
+      cardFace(b, id);
+      b.addEventListener('click', () => toggleCard(id));
+      box.appendChild(b);
+    });
+    if (focusIndex !== null && hand.length) box.children[Math.min(focusIndex, hand.length - 1)].focus();
+    $('hand-title').textContent = TEXT.handTitle(hand.length);
+    $('hand-head').classList.toggle('turn', humanPlaying() || humanGiving());
+    const myTitle = state.titles[HUMAN];
+    $('hand-status').textContent = myTitle === null ? '' : TEXT.yourTitle(content.titles[myTitle]);
+  }
+
+  function renderControls() {
+    const cards = [...selected];
+    const play = $('btn-play');
+    const pass = $('btn-pass');
+    let hint = '';
+    if (humanGiving()) {
+      const need = state.exchange.pending[0].count;
+      play.textContent = TEXT.give;
+      play.disabled = cards.length !== need;
+      pass.hidden = true;
+      hint = cards.length ? TEXT.selGiveCount(cards.length, need) : TEXT.selGiveNone(need);
+    } else {
+      play.textContent = TEXT.play;
+      pass.hidden = false;
+      const combo = cards.length ? rules.analyze(cards, state.revolution) : null;
+      const ok = humanPlaying() && !!combo && rules.beats(combo, state.field, state.revolution);
+      play.disabled = !ok;
+      pass.disabled = !(humanPlaying() && state.field);
+      if (state.phase === 'roundEnd') hint = '';
+      else if (state.finished.includes(HUMAN)) hint = TEXT.youFinished(state.finished.indexOf(HUMAN) + 1);
+      else if (!cards.length) hint = humanPlaying() ? TEXT.selNone : TEXT.notYourTurn;
+      else if (!combo) hint = TEXT.selBad(cardsText(rules.sortCards(cards)));
+      else if (ok) hint = TEXT.selOk(cardsText(rules.sortCards(cards)), kindText(combo));
+      else hint = TEXT.selNg(cardsText(rules.sortCards(cards)));
+    }
+    $('btn-clear').disabled = cards.length === 0;
+    $('hint').textContent = hint;
+  }
+
+  function renderResult() {
+    const over = rules.isOver(state);
+    $('result').hidden = !over;
+    $('controls').hidden = over;   // ラウンドの終わりは「次のラウンド」だけを出す
+    $('hint').hidden = over;
+    $('game-over').hidden = !over;
+    if (!over) return;
+    $('result-title').textContent = TEXT.resultTitle(state.round);
+    const list = $('result-list');
+    clearChildren(list);
+    state.finished.forEach((p, k) => {
+      const li = document.createElement('li');
+      li.textContent = TEXT.resultLine(content.titles[k], nameOf(p));
+      list.appendChild(li);
+    });
+  }
+
+  function render(focusIndex = null) {
+    $('seed-current').textContent = TEXT.seedCurrent(state.seed);
+    $('round-label').textContent = TEXT.roundLabel(state.round);
+    $('rev-badge').hidden = !state.revolution;
+    $('rev-badge').textContent = TEXT.revolution;
+    renderOpponents();
+    renderExchange();
+    renderField();
+    renderHand(focusIndex);
+    renderControls();
+    renderResult();
+  }
+
+  // 直前の出来事をメッセージにする(aria-live で読み上げる)
+  function describe() {
+    const e = state.lastEvent;
+    const parts = [];
+    if (e.kind === 'round') parts.push(TEXT.evRound(state.round));
+    if (e.kind === 'give') {
+      const x = state.exchange.log[state.exchange.log.length - 1];
+      parts.push(TEXT.evGive(nameOf(x.from), nameOf(x.to), cardsText(x.cards)));
+    }
+    if (e.kind === 'play') parts.push(TEXT.evPlay(nameOf(e.player), cardsText(e.cards)));
+    if (e.kind === 'pass') parts.push(TEXT.evPass(nameOf(e.player)));
+    if (e.revolution) parts.push(state.revolution ? TEXT.evRevOn : TEXT.evRevOff);
+    if (e.out) parts.push(TEXT.evOut(nameOf(e.player), state.finished.indexOf(e.player) + 1));
+    if (e.roundOver) parts.push(TEXT.evRoundOver(state.round));
+    else if (e.eight) parts.push(TEXT.evEight);
+    else if (e.cleared) parts.push(TEXT.evCleared);
+    if (!e.roundOver && (e.eight || e.cleared) && state.turn !== HUMAN) parts.push(TEXT.evLeader(nameOf(state.turn)));
+    return parts.join('') + promptText();
+  }
+
+  // あなたが操作する番なら、何をすればよいかを添える
+  function promptText() {
+    if (humanGiving()) {
+      const pend = state.exchange.pending[0];
+      return TEXT.askGive(content.titles[state.titles[HUMAN]], nameOf(pend.to), pend.count);
+    }
+    if (humanPlaying()) return state.field ? TEXT.yourTurn : TEXT.yourLead;
+    return '';
+  }
+
+  function focusedCardIndex() {
+    const el = document.activeElement;
+    if (!el || !el.dataset || el.dataset.card === undefined) return null;
+    return [...$('hand').children].indexOf(el);
+  }
+
+  function scheduleCpu() {
+    if (cpuTimer !== null) { clearTimeout(cpuTimer); cpuTimer = null; }
+    const a = actor();
+    if (a === null || a === HUMAN) return;
+    const delay = state.phase === 'exchange' ? CONFIG.cpuGiveDelayMs : CONFIG.cpuDelayMs;
+    cpuTimer = setTimeout(() => {
+      cpuTimer = null;
+      const action = ai.choose(state);
+      if (!action) return;
+      const next = rules.apply(state, action);
+      if (next === state) return;   // 起きないはず(ai は rules の合法手から選ぶ)
+      commit(next);
+      setMessage(describe());
+    }, delay);
+  }
+
+  function commit(next) {
+    const focusIndex = focusedCardIndex();
+    if (next.hands[HUMAN] !== (state && state.hands[HUMAN])) selected = new Set([...selected].filter((id) => next.hands[HUMAN].includes(id)));
+    state = next;
+    storage.save(state);
+    render(focusIndex);
+    scheduleCpu();
+  }
+
+  function startNew(seed) {
+    toggleRules(false, false);
+    selected = new Set();
+    commit(rules.newGame(seed));
+    setMessage(TEXT.newGameStarted(state.seed) + promptText());
+  }
+
+  function toggleCard(id) {
+    if (state.phase === 'roundEnd') return;
+    if (selected.has(id)) selected.delete(id); else selected.add(id);
+    const btn = [...$('hand').children].find((b) => b.dataset.card === String(id));
+    if (btn) btn.setAttribute('aria-pressed', String(selected.has(id)));
+    renderControls();
+  }
+
+  function onPlay() {
+    if (state.phase === 'roundEnd') { onNext(); return; }
+    const cards = [...selected];
+    if (humanGiving()) {
+      const next = rules.apply(state, { type: 'give', cards });
+      if (next === state) return;
+      selected = new Set();
+      commit(next);
+      setMessage(describe());
+      return;
+    }
+    if (!humanPlaying()) return;
+    const next = rules.apply(state, { type: 'play', cards });
+    if (next === state) { setMessage(TEXT.invalidPlay); return; }
+    selected = new Set();
+    commit(next);
+    setMessage(describe());
+  }
+
+  function onPass() {
+    if (!humanPlaying()) return;
+    if (!state.field) { setMessage(TEXT.noPassOnLead); return; }
+    selected = new Set();
+    commit(rules.apply(state, { type: 'pass' }));
+    setMessage(describe());
+  }
+
+  function onNext() {
+    if (state.phase !== 'roundEnd') return;
+    selected = new Set();
+    commit(rules.apply(state, { type: 'nextRound' }));
+    setMessage(describe());
+  }
+
+  function onClear() {
+    selected = new Set();
+    render(focusedCardIndex());
+  }
+
+  // ルール欄の開閉(全ゲーム共通の操作:N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる)
+  function toggleRules(force, moveFocus = true) {
+    const panel = $('rules');
+    const open = force === undefined ? panel.hidden : force;
+    panel.hidden = !open;
+    $('btn-rules').setAttribute('aria-expanded', String(open));
+    if (open) $('seed-input').value = '';
+    else if (moveFocus && force === false) $('btn-rules').focus();
+  }
+
+  function onSeedSubmit() {
+    const raw = $('seed-input').value.trim();
+    if (!/^\d{1,10}$/.test(raw) || Number(raw) > CONFIG.seedMax) { setMessage(TEXT.seedInvalid); $('seed-input').focus(); return; }
+    startNew(Number(raw));
+  }
+
+  function moveFocus(delta) {
+    const cards = [...$('hand').children];
+    if (!cards.length) return;
+    const i = cards.indexOf(document.activeElement);
+    const j = i < 0 ? (delta > 0 ? 0 : cards.length - 1) : (i + delta + cards.length) % cards.length;
+    cards[j].focus();
+  }
+
+  function onKey(e) {
+    if (e.key === 'Escape' && !$('rules').hidden) { e.preventDefault(); toggleRules(false); return; }
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); startNew(freshSeed()); return; }
+    if (e.key === 'r' || e.key === 'R') { e.preventDefault(); toggleRules(); return; }
+    // ゲームの操作キー
+    const onCard = !!(e.target && e.target.dataset && e.target.dataset.card !== undefined);
+    const free = onCard || e.target === document.body;   // ほかのボタンにフォーカスがあるときは、そのボタンの動きを優先する
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { if (free) { e.preventDefault(); moveFocus(e.key === 'ArrowRight' ? 1 : -1); } return; }
+    if (e.key === 'p' || e.key === 'P') { e.preventDefault(); onPass(); return; }
+    if (e.key === 'Enter' && free) { e.preventDefault(); onPlay(); return; }
+    // Space は、札のボタンの標準の動き(押す=選ぶ/やめる)に任せる
+  }
+
+  function init() {
+    fillTexts();
+    $('btn-new').addEventListener('click', () => startNew(freshSeed()));
+    $('btn-new-2').addEventListener('click', () => startNew(freshSeed()));
+    $('btn-rules').addEventListener('click', () => toggleRules());
+    $('btn-seed').addEventListener('click', onSeedSubmit);
+    $('seed-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onSeedSubmit(); } });
+    document.addEventListener('keydown', onKey);
+    $('btn-play').addEventListener('click', onPlay);
+    $('btn-pass').addEventListener('click', onPass);
+    $('btn-clear').addEventListener('click', onClear);
+    $('btn-next').addEventListener('click', onNext);
+
+    const loaded = storage.load();
+    if (loaded.state) {
+      commit(loaded.state);
+      setMessage(TEXT.restored + promptText());
+    } else {
+      startNew(freshSeed());
+      if (loaded.status === 'corrupted') setMessage(TEXT.corrupted);
+    }
+  }
+
+  return Object.freeze({ init });
+})();
+
+ui.init();
+</script>
+</body>
+</html>
