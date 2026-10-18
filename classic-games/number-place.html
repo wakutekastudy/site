@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<!--
+  ============================================================
+  ナンバープレース / number-place
+  ============================================================
+  ゲーム名      : ナンバープレース / number-place
+  版            : 0.3
+  最終更新日    : 2026-10-18
+  ライセンス    : MIT-0(リポジトリの LICENSE を参照)
+  題材の確認    : ①ルール:9×9のマスにタテ・ヨコ・3×3ブロックで1〜9を1つずつ入れる論理パズル。遊び方そのものなので問題ないと考えた。
+                  ②名称:一般的な呼び名の「ナンバープレース」を使う(特定の企業が商標として使う名称は使わない)。
+                  ③見た目:盤・数字・ボタンとも独自のCSSで描いた。問題は市販・雑誌のものを使わず、シードから自動で作る。
+  採用ルール    : ・答えが1通りに決まる問題だけを出す(作るときに確かめる)。
+                  ・難易度は3段階。ヒント数字の数の目安は やさしい50個 / ふつう32個 / むずかしい26個。
+                  ・メモ(候補の数字を小さく書く)、ひとつ戻す(200手まで)、重なり表示(オン/オフ)を付ける。
+                  ・答えを教えるヒント機能は付けない。
+                  ・「数字確認」で、自分で入れた数字の間違いだけを知らせる(「×」を付ける)。正しい数字は教えない。
+                    ベスト時間には影響させず、確認した回数だけをクリアのメッセージに出す。
+                  ・保存するのは途中の状態(「×」のマスと確認の回数を含む)と、難易度ごとのベスト時間。
+  流用できる部品: シード付きシャッフルによる完成盤づくり、行・列・ブロックの重複判定、
+                  答えの数え上げ(2通り見つけたら打ち切る)、メモ付きの盤入力UI、
+                  正しい答えを教えずに間違いだけ知らせる確認機能(rules の check)。
+  転用メモ      : 1. 仕組みの核:「条件を満たす完成形を作る → 1つずつ消しても答えが1通りか確かめる」という問題の作り方と、
+                     「同じ行・列・ブロックに重ならない」という制約の判定。
+                  2. 学習への転用アイディア(実装しない):
+                     ①行・列・ブロックを「分類」に置き換え、各グループに同じ種類が重ならないように並べる分類パズル
+                     ②用語と意味を縦横に配置し、重なりなしで当てはめるドリル
+                     ③「答えが1つになる」確認を使った、穴埋め問題の自動作成
+                  3. 差し替える箇所:content.symbols(数字1〜9の表示)と、rules の PEERS(重ならない範囲の定義)。
+  ============================================================
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>ナンバープレース | 定番ゲーム | わくてかスタディ研究所</title>
+<meta name="description" content="ナンバープレースをブラウザで遊べます。タテ・ヨコ・3×3のブロックに、1〜9を1つずつ入れる数字パズル。難易度は3段階で、メモ機能もあります。">
+<meta name="theme-color" content="#FFF8EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#24170F" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<style>
+  /* ===== 共通ここから:戻りリンク・見出し・タイトル・ボタン(全ゲームで同じ内容。変えてよいのは --gh-width の値だけ。正本は _dev/game-template.html) ===== */
+  :root {
+    --gh-width: 28rem;           /* ★ゲームごと:ゲーム本体の幅(盤ゲーム 32rem、カードゲーム 60rem など)。戻りリンクと見出しをこの幅にそろえる */
+    --gh-btn-bg: #FFFFFF; --gh-btn-fg: #3B2416; --gh-btn-line: #E3CBB0;
+    --gh-cta: #B85215; --gh-cta-fg: #FFFFFF;   /* 白文字 4.93:1 */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --gh-btn-bg: #33231A; --gh-btn-fg: #FFF1E0; --gh-btn-line: #6E5443; --gh-cta: #F29A55; --gh-cta-fg: #24170F; }
+  }
+  [hidden] { display: none !important; }
+  .gh-col { box-sizing: border-box; width: calc(100% - 1.5rem); max-width: calc(var(--gh-width) - 1.5rem); margin-left: auto; margin-right: auto; }
+  .site-back { display: block; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.75rem 0.25rem; margin-top: 0; margin-bottom: 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+  .site-back.gh-col { padding-left: 0; padding-right: 0; }
+  .site-back a { color: inherit; text-underline-offset: 0.2em; }
+  .site-back a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+  .game-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; padding: 0; margin-top: 0; margin-bottom: 0.5rem; background: none; }
+  .game-head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", serif; font-size: 1.4rem; font-weight: 700; line-height: 1.4; margin: 0; flex: 1 1 auto; }
+  .game-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  button.gbtn { font: inherit; font-size: 1rem; line-height: 1.2; font-weight: 400; min-height: 2.75rem; padding: 0.5rem 1rem; border-radius: 0.5rem;
+    border: 1px solid var(--gh-btn-line); background: var(--gh-btn-bg); color: var(--gh-btn-fg); cursor: pointer; }
+  button.gbtn.gbtn-primary { background: var(--gh-cta); color: var(--gh-cta-fg); border-color: var(--gh-cta); font-weight: 700; }
+  @media (max-width: 480px) {
+    .game-head, .game-actions { gap: 0.4rem; }
+    .game-actions button.gbtn { padding: 0.5rem 0.65rem; }   /* 幅375pxでタイトルとボタンを1行に収める */
+  }
+  /* ===== 共通ここまで ===== */
+
+  /* ===== 標準の部品(新しく作るゲームはこの形を使う。ゲームに合わせて調整してよい) ===== */
+  :root {
+    /* 配色(ライト)。文字色は背景とのコントラスト比 4.5:1 以上 */
+    --ink: #3B2416;              /* 文字・見出し・フォーカスリング */
+    --ink-soft: #6E5443;         /* 薄い文字 */
+    --paper: #FFF8EE;            /* 背景 */
+    --paper-warm: #FFEBD2;       /* パネル・帯 */
+    --card: #FFFFFF;             /* カード・入力欄 */
+    --line: #E3CBB0;             /* 枠線 */
+    --spark: #E8792B;            /* 手番・選択中の枠や印(文字色には使わない) */
+    --red-text: #B8321F;         /* 赤スートなど赤系の文字(白 5.98:1) */
+    --focus: var(--ink);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #FFF1E0; --ink-soft: #D9C3AE; --paper: #24170F; --paper-warm: #33231A;
+      --card: #3A281C; --line: #6E5443; --red-text: #FF9C8C; --focus: #F29A55; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); line-height: 1.6;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  button.gbtn:disabled { opacity: 0.5; cursor: default; }
+  /* ルール欄(見出しのすぐ下に開く。最初は閉じる) */
+  .rules-panel { background: var(--paper-warm); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+  .rules-panel h2 { font-size: 1.05rem; margin: 0.75rem 0 0.25rem; }
+  .rules-panel h2:first-child { margin-top: 0; }
+  .rules-panel ul { padding-left: 1.2em; margin: 0.25rem 0; }
+  .rules-panel p { margin: 0.25rem 0; }
+  .seed-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+  .seed-form input { font: inherit; padding: 0.4rem 0.5rem; width: 10em; max-width: 100%; border: 1px solid var(--line); border-radius: 0.4rem; background: var(--card); color: var(--ink); }
+  /* 状況の表示と、対局後の「新しいゲーム」 */
+  .message { min-height: 1.6em; margin: 0 0 0.75rem; }
+  .game-over { display: flex; margin: 0.75rem 0; }
+  main { padding-bottom: 1.5rem; }
+
+  /* ===== ゲーム固有のスタイル(★ゲームごと) ===== */
+  :root {
+    --np-user: #1D4F91;          /* 自分で入れた数字(白 8.5:1) */
+    --np-rel: #FFF0DC;           /* 選んだマスと同じ行・列・ブロック */
+    --np-same: #FFDDB8;          /* 選んだマスと同じ数字 */
+    --np-sel: #FFD0A0;           /* 選んだマス */
+    --np-bad: #FFD9D2;           /* 同じ数字が重なっているマス */
+    --np-wrong: #EBDDFB;         /* 数字確認で「ちがう」と分かったマス(×。うす紫の地に濃い紫の文字 7:1) */
+    --np-wrong-text: #5B2A9E;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --np-user: #9CC8FF; --np-rel: #4A3425; --np-same: #5A3A22; --np-sel: #6E4520; --np-bad: #6B2A22;
+      --np-wrong: #4B2D6E; --np-wrong-text: #D9B8FF; }
+  }
+  .np-level { display: flex; gap: 0.4rem; margin-bottom: 0.5rem; }
+  .np-level button.gbtn { flex: 1 1 0; padding: 0.5rem 0.25rem; font-size: 0.95rem; }
+  /* 押されている状態は、色だけでなく太い枠・太字・✓で示す */
+  button.gbtn[aria-pressed="true"] { border: 2px solid var(--ink); font-weight: 700; background: var(--paper-warm); }
+  button.gbtn[aria-pressed="true"]::before { content: "✓ "; }
+  .np-status { margin: 0 0 0.5rem; font-size: 0.95rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+  .np-board { border: 2px solid var(--ink); background: var(--card); -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+  .np-row { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); }
+  .np-row.np-b3 .np-cell { border-bottom: 2px solid var(--ink); }
+  .np-row:last-child .np-cell { border-bottom: 0; }
+  .np-cell { position: relative; aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; cursor: pointer;
+    border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--np-user); font-size: 1.35rem; line-height: 1; }
+  .np-cell.np-r3 { border-right: 2px solid var(--ink); }
+  .np-cell:last-child { border-right: 0; }
+  .np-cell.is-given { color: var(--ink); font-weight: 700; }
+  .np-cell.is-rel { background: var(--np-rel); }
+  .np-cell.is-same { background: var(--np-same); }
+  .np-cell.is-same .np-val { text-decoration: underline; text-underline-offset: 0.15em; }
+  .np-cell.is-sel { background: var(--np-sel); box-shadow: inset 0 0 0 3px var(--spark); }
+  .np-cell.is-bad { background: var(--np-bad); color: var(--red-text); }
+  .np-cell.is-wrong { background: var(--np-wrong); color: var(--np-wrong-text); }
+  .np-cell:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+  .np-mark { position: absolute; top: 0; right: 0.12rem; font-size: 0.7rem; font-weight: 700; line-height: 1; color: var(--red-text); }
+  .np-mark-wrong { right: auto; left: 0.12rem; color: var(--np-wrong-text); }
+  .np-notes { position: absolute; inset: 1px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+    font-size: 0.6rem; line-height: 1; color: var(--ink-soft); pointer-events: none; }
+  .np-notes span { display: flex; align-items: center; justify-content: center; }
+  @media (max-width: 360px) { .np-cell { font-size: 1.15rem; } }
+
+  .np-pad { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.4rem; margin-top: 0.6rem; }
+  .np-pad button.gbtn { padding: 0.25rem; font-size: 1.3rem; font-weight: 700; }
+  .np-pad button.gbtn.np-erase { font-size: 1rem; }
+  .np-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; margin-top: 0.4rem; }
+  .np-tools button.gbtn { padding: 0.5rem 0.4rem; font-size: 0.95rem; }
+</style>
+</head>
+<body>
+<!-- ===== 共通ここから(HTML):戻りリンク・見出し・ルール欄・メッセージ ===== -->
+<nav class="site-back gh-col" aria-label="サイト内"><a href="./">← 定番ゲーム一覧</a> ／ <a href="../">ホーム</a></nav>
+<header class="game-head gh-col">
+  <h1 id="title"></h1>
+  <div class="game-actions">
+    <button type="button" id="btn-rules" class="gbtn" aria-expanded="false" aria-controls="rules"></button>
+    <button type="button" id="btn-new" class="gbtn gbtn-primary"></button>
+  </div>
+</header>
+<main class="gh-col">
+  <section id="rules" class="rules-panel" hidden aria-labelledby="rules-title">
+    <h2 id="rules-title"></h2>
+    <ul id="rules-list"></ul>
+    <h2 id="keys-title"></h2>
+    <ul id="keys-list"></ul>
+    <h2 id="seed-title"></h2>
+    <p id="seed-current"></p>
+    <p id="seed-desc"></p>
+    <div class="seed-form">
+      <label for="seed-input" id="seed-label"></label>
+      <input id="seed-input" type="text" inputmode="numeric" autocomplete="off">
+      <button type="button" id="btn-seed" class="gbtn"></button>
+    </div>
+  </section>
+  <p id="message" class="message" role="status" aria-live="polite"></p>
+<!-- ===== 共通ここまで(HTML) ===== -->
+
+  <!-- ===== ゲーム本体(★ゲームごと) ===== -->
+  <section id="game" aria-label="ゲーム">
+    <div class="np-level" id="np-level" role="group"></div>
+    <p class="np-status" id="np-status"></p>
+    <div class="np-board" id="np-board" role="grid"></div>
+    <div class="np-pad" id="np-pad" role="group"></div>
+    <div class="np-tools">
+      <button type="button" id="btn-memo" class="gbtn" aria-pressed="false"></button>
+      <button type="button" id="btn-undo" class="gbtn"></button>
+      <button type="button" id="btn-dup" class="gbtn" aria-pressed="true"></button>
+      <button type="button" id="btn-check" class="gbtn"></button>
+    </div>
+  </section>
+
+  <!-- 共通:対局後の「新しいゲーム」(スマホで上に戻らずに始められるように) -->
+  <div class="game-over" id="game-over" hidden>
+    <button type="button" id="btn-new-2" class="gbtn gbtn-primary"></button>
+  </div>
+</main>
+
+<script>
+'use strict';
+
+/* ============================================================
+ * CONFIG:ゲームごとの設定値(★ゲームごと)
+ * ============================================================ */
+const CONFIG = Object.freeze({
+  gameId: 'number-place',
+  schemaVersion: 1,                         // 保存形式を変えたら上げる(古い保存データは破棄して新しく始める)
+  storageKey: 'wktks.game.number-place',    // 'wktks.game.' + gameId(接頭辞 wktks. は全ゲーム共通)
+  seedMax: 0xFFFFFFFF,                      // シードは0以上の32bit整数
+  difficulties: Object.freeze(['easy', 'normal', 'hard']),
+  clues: Object.freeze({ easy: 50, normal: 32, hard: 26 }),   // ヒント数字の数の目安(仮の値)。やさしいは空きマスが約31個
+  searchBudget: 4000,                       // 答えの数え上げ1回あたりの探索回数の上限(固まらないように)
+  historyMax: 200,                          // 「ひとつ戻す」で戻れる手数の上限
+  maxTime: 359999,                          // 経過時間の上限(秒)。99:59:59
+});
+
+/* ============================================================
+ * TEXT:画面の文言はここにまとめる(コード中に直書きしない)
+ * 共通の文言は変えない。★の付いたものをゲームごとに書く
+ * ============================================================ */
+const TEXT = Object.freeze({
+  title: 'ナンバープレース',                          // ★ゲームごと
+  rulesButton: 'ルール (R)',
+  newGame: '新しいゲーム (N)',
+  rulesTitle: 'ルール',
+  rules: [                                            // ★ゲームごと
+    'タテ・ヨコ・太線で囲まれた3×3のブロックのどれにも、1〜9の数字が1つずつ入るように、空いているマスを埋めます。',
+    '最初から入っている数字（太字）は変えられません。答えは必ず1通りに決まります。',
+    'マスを選んで、下の数字ボタンで入れます。「メモ」をオンにすると、候補の数字を小さく書けます。',
+    '同じ行・列・ブロックに同じ数字が重なると、そのマスに「!」が出ます（「重なり表示」でオン/オフを切り替えられます）。',
+    '全部のマスが正しく埋まるとクリアです。難易度ごとに、いちばん短い時間を記録します。',
+    '「数字確認」を押すと、自分で入れた数字にまちがいがないか調べます。まちがいのあるマスには「×」が付きます（正しい数字は教えません）。',
+    '手数は、数字を入れた回数です。難易度を切り替えると、新しいゲームが始まります。',
+    '同じシードと同じ難易度なら、同じ問題になります。',
+  ],
+  keysTitle: 'キーボード操作',
+  keys: [                                             // ★ゲームごと(N/R/Esc の3行は共通)
+    '矢印キー: マスを選ぶ',
+    '1〜9: 数字を入れる（メモがオンのときは候補を書く）',
+    '0 / Delete / Backspace: 消す',
+    'M: メモのオン/オフ',
+    'U: ひとつ戻す',
+    'C: 数字確認',
+    'N: 新しいゲーム',
+    'R: ルールの表示/非表示',
+    'Esc: ルールを閉じる',
+  ],
+  seedTitle: 'シード',
+  seedCurrent: (seed) => `現在のシード: ${seed}`,
+  seedDesc: '同じシードで同じ操作をすると、同じ展開になります。',
+  seedLabel: 'シード（整数）',
+  seedButton: 'このシードで新しいゲーム',
+  seedInvalid: 'シードには0以上の整数を入れてください。',
+  newGameStarted: (seed) => `新しいゲームを始めました（シード ${seed}）。`,
+  restored: '中断したゲームを再開しました。',
+  corrupted: '保存データを読み込めなかったため、新しいゲームを始めました。',
+  // ここから下は、このゲーム専用
+  levelGroup: '難易度',
+  levels: { easy: 'やさしい', normal: 'ふつう', hard: 'むずかしい' },
+  boardLabel: '盤',
+  padGroup: '数字ボタン',
+  padInput: (v) => `${v} を入れる`,
+  padNote: (v) => `${v} をメモする`,
+  erase: '消す',
+  eraseLabel: 'マスの数字とメモを消す',
+  memo: 'メモ (M)',
+  undo: 'ひとつ戻す (U)',
+  dup: '重なり表示',
+  check: '数字確認 (C)',
+  checkWrong: (n) => `数字確認の結果、まちがっている数字が ${n} マスありました。`,
+  checkOk: '数字確認の結果、まちがいは見つかりませんでした。',
+  checkNone: '数字確認：まだ自分で入れた数字がありません。',
+  status: (moves, time, best) => `手数 ${moves} ／ 経過 ${time} ／ ベスト ${best}`,
+  bestNone: 'なし',
+  cellLabel: (r, c, sym, given, notes, bad, wrong, selected) =>
+    `${r}行${c}列、${sym === null ? '空き' : sym}${given ? '、ヒント数字' : ''}`
+    + (notes.length > 0 ? `、メモ ${notes.join('・')}` : '') + (bad ? '、重なりあり' : '')
+    + (wrong ? '、まちがいあり' : '') + (selected ? '、選択中' : ''),
+  givenFixed: 'ヒント数字は変えられません。',
+  noteOnFilled: '数字が入っているマスには、メモを書けません。',
+  dupFound: '同じ行・列・ブロックに、同じ数字があります。',
+  fullButWrong: 'すべてのマスが埋まりましたが、同じ数字が重なっている所があります。',
+  cleared: (moves, time, checks, newBest) =>
+    `クリアです！ 手数 ${moves}、経過時間 ${time}${checks > 0 ? `、数字確認 ${checks}回` : ''}。` + (newBest ? 'この難易度のベスト記録です。' : ''),
+});
+
+/* ============================================================
+ * rng:シード付き疑似乱数(ゲームロジックでは、シードを指定できない標準の乱数関数を使わない)
+ * DOM に依存させない
+ * ============================================================ */
+const rng = (() => {
+  // mulberry32:シードから決まった順の乱数を作る
+  function make(seed) {
+    let a = seed >>> 0;
+    return function next() {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function shuffle(array, next) {
+    const a = array.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(next() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  return Object.freeze({ make, shuffle });
+})();
+
+/* ============================================================
+ * content:表示名など差し替えできるデータ(将来JSONとして外から読める素のデータにしておく)
+ * rules は「数字1〜9」という抽象的な値だけを扱い、見た目はここで決める
+ * ============================================================ */
+const content = Object.freeze({
+  symbols: Object.freeze(['1', '2', '3', '4', '5', '6', '7', '8', '9']),
+});
+
+/* ============================================================
+ * rules:問題づくり・操作の適用・クリア判定・保存データの検証
+ * 状態は JSON にそのまま変換できる素のデータ。受け取った状態は書き換えず、新しい状態を返す
+ * DOM に依存させない
+ *   マスの番号は 0〜80(行 = 番号 ÷ 9、列 = 番号 ÷ 9 の余り)
+ *   grid  : 現在の盤(0 = 空き、1〜9 = 数字)  notes : マスごとのメモ(ビット列。数字 v は 1 << (v-1))
+ *   history: 戻すための記録。1回の操作ごとに [マス番号, 前の数字, 前のメモ] の並び
+ * ============================================================ */
+const rules = (() => {
+  const ALL = 511;                                   // 1〜9 が全部立ったビット列
+  const BOX = Array.from({ length: 81 }, (_, i) => Math.floor(i / 27) * 3 + Math.floor((i % 9) / 3));
+  // 同じ行・列・ブロックにあるほかの20マス(差し替えるときはここを変える)
+  const PEERS = Array.from({ length: 81 }, (_, i) => {
+    const list = [];
+    for (let k = 0; k < 81; k++) {
+      if (k !== i && (Math.floor(k / 9) === Math.floor(i / 9) || k % 9 === i % 9 || BOX[k] === BOX[i])) list.push(k);
+    }
+    return Object.freeze(list);
+  });
+  const POP = (() => { const t = new Uint8Array(512); for (let i = 1; i < 512; i++) t[i] = t[i >> 1] + (i & 1); return t; })();
+
+  /* ---- 答えの数え上げ(2通り見つけたら打ち切る) ---- */
+  // 空きマスのうち候補がいちばん少ないマスから試す。budget 回を超えたら aborted にする
+  function countSolutions(cells, limit, budget) {
+    const g = cells.slice();
+    const row = new Array(9).fill(0), col = new Array(9).fill(0), box = new Array(9).fill(0);
+    for (let i = 0; i < 81; i++) {
+      if (g[i]) { const b = 1 << (g[i] - 1); row[Math.floor(i / 9)] |= b; col[i % 9] |= b; box[BOX[i]] |= b; }
+    }
+    let found = 0, nodes = 0, aborted = false;
+    function dfs() {
+      if (found >= limit || aborted) return;
+      if (++nodes > budget) { aborted = true; return; }
+      let best = -1, bestMask = 0, bestN = 10;
+      for (let i = 0; i < 81; i++) {
+        if (g[i]) continue;
+        const m = ALL & ~(row[Math.floor(i / 9)] | col[i % 9] | box[BOX[i]]);
+        const n = POP[m];
+        if (n < bestN) { best = i; bestMask = m; bestN = n; if (n <= 1) break; }
+      }
+      if (best < 0) { found++; return; }
+      if (bestN === 0) return;
+      const r = Math.floor(best / 9), c = best % 9, b = BOX[best];
+      for (let v = 1; v <= 9; v++) {
+        const bit = 1 << (v - 1);
+        if (!(bestMask & bit)) continue;
+        g[best] = v; row[r] |= bit; col[c] |= bit; box[b] |= bit;
+        dfs();
+        g[best] = 0; row[r] &= ~bit; col[c] &= ~bit; box[b] &= ~bit;
+        if (found >= limit || aborted) return;
+      }
+    }
+    dfs();
+    return { count: found, aborted };
+  }
+
+  /* ---- 問題づくり ---- */
+  // 規則的な完成盤を、数字・行・列の入れ替えで混ぜる(入れ替え方は行と列を同じ帯/段の中だけで動かすので、常に正しい完成盤になる)
+  function buildSolution(next) {
+    const digits = rng.shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9], next);
+    const bands = rng.shuffle([0, 1, 2], next);
+    const rowsIn = [0, 1, 2].map(() => rng.shuffle([0, 1, 2], next));
+    const stacks = rng.shuffle([0, 1, 2], next);
+    const colsIn = [0, 1, 2].map(() => rng.shuffle([0, 1, 2], next));
+    const rowOrder = [], colOrder = [];
+    for (const b of bands) for (const r of rowsIn[b]) rowOrder.push(b * 3 + r);
+    for (const s of stacks) for (const c of colsIn[s]) colOrder.push(s * 3 + c);
+    const cells = [];
+    for (const r of rowOrder) for (const c of colOrder) cells.push(digits[(r * 3 + Math.floor(r / 3) + c) % 9]);
+    return cells;
+  }
+  // 完成盤から1マスずつ消し、答えが1通りのままのときだけ消す。目安の数に届いたら止める
+  // (これ以上消せないときは、目安より多くのヒント数字が残る)
+  function generate(seed, difficulty) {
+    const next = rng.make(seed);
+    const solution = buildSolution(next);
+    const puzzle = solution.slice();
+    const order = rng.shuffle(Array.from({ length: 81 }, (_, i) => i), next);
+    let clues = 81;
+    for (const i of order) {
+      if (clues <= CONFIG.clues[difficulty]) break;
+      const keep = puzzle[i];
+      puzzle[i] = 0;
+      const res = countSolutions(puzzle, 2, CONFIG.searchBudget);
+      if (res.aborted || res.count !== 1) puzzle[i] = keep; else clues--;
+    }
+    return { puzzle, solution };
+  }
+
+  function validBest(best) {
+    return !!best && typeof best === 'object'
+      && CONFIG.difficulties.every((d) => best[d] === null || (Number.isInteger(best[d]) && best[d] >= 0 && best[d] <= CONFIG.maxTime));
+  }
+
+  // carry:前のゲームから引き継ぐ設定（ベスト記録と重なり表示）。同じシード・難易度なら同じ問題になる
+  function newGame(seed, difficulty, carry) {
+    const d = CONFIG.difficulties.includes(difficulty) ? difficulty : 'normal';
+    const s = seed >>> 0;
+    const g = generate(s, d);
+    return {
+      schemaVersion: CONFIG.schemaVersion, seed: s, difficulty: d,
+      puzzle: g.puzzle.join(''), solution: g.solution.join(''),
+      grid: g.puzzle.slice(), notes: new Array(81).fill(0), history: [],
+      moves: 0, elapsed: 0, finished: false, newBest: false,
+      wrong: [], checks: 0,                          // 数字確認で「ちがう」と分かったマスの番号、確認した回数
+      dup: carry && typeof carry.dup === 'boolean' ? carry.dup : true,
+      best: carry && validBest(carry.best) ? { ...carry.best } : { easy: null, normal: null, hard: null },
+    };
+  }
+
+  /* ---- 判定 ---- */
+  // 同じ行・列・ブロックに同じ数字があるマスを true にした配列
+  function conflicts(grid) {
+    const bad = new Array(81).fill(false);
+    for (let i = 0; i < 81; i++) {
+      const v = grid[i];
+      if (!v) continue;
+      for (const p of PEERS[i]) if (grid[p] === v) { bad[i] = true; break; }
+    }
+    return bad;
+  }
+  function isSolved(state, grid) {
+    for (let k = 0; k < 81; k++) if (grid[k] !== Number(state.solution[k])) return false;
+    return true;
+  }
+  function isOver(state) { return state.finished; }
+  function validIndex(i) { return Number.isInteger(i) && i >= 0 && i < 81; }
+  function validDigit(v) { return Number.isInteger(v) && v >= 1 && v <= 9; }
+  function pushHistory(history, entry) {
+    const out = history.length >= CONFIG.historyMax ? history.slice(history.length - CONFIG.historyMax + 1) : history.slice();
+    out.push(entry);
+    return out;
+  }
+
+  // 「×」を外す:数字を変えた・消した・戻したマスは、もう一度確認するまで「ちがう」とは言えない
+  function dropWrong(list, indices) {
+    return (list || []).filter((k) => !indices.includes(k));
+  }
+  // 保存データに新しい項目がないとき(数字確認の追加前に保存したもの)は、空として補う
+  function normalize(data) {
+    return { ...data, wrong: data.wrong === undefined ? [] : data.wrong, checks: data.checks === undefined ? 0 : data.checks };
+  }
+  // 自分で入れた数字が1つでもあるか
+  function hasEntries(state) {
+    return state.grid.some((v, i) => v !== 0 && state.puzzle[i] === '0');
+  }
+
+  /* ---- 操作の適用 ---- */
+  function applySet(state, i, v) {
+    if (state.finished || !validIndex(i) || !validDigit(v)) return state;
+    if (state.puzzle[i] !== '0' || state.grid[i] === v) return state;
+    const grid = state.grid.slice(), notes = state.notes.slice();
+    const changes = [[i, grid[i], notes[i]]];
+    grid[i] = v; notes[i] = 0;
+    const bit = 1 << (v - 1);
+    for (const p of PEERS[i]) {                       // 同じ数字のメモは、まわりのマスから外す
+      if (grid[p] === 0 && (notes[p] & bit)) { changes.push([p, 0, notes[p]]); notes[p] &= ~bit; }
+    }
+    const next = { ...state, grid, notes, moves: state.moves + 1, history: pushHistory(state.history, changes), wrong: dropWrong(state.wrong, [i]) };
+    if (isSolved(next, grid)) {
+      const best = { ...state.best };
+      const prev = best[state.difficulty];
+      next.finished = true;
+      next.newBest = prev === null || state.elapsed < prev;
+      if (next.newBest) best[state.difficulty] = state.elapsed;
+      next.best = best;
+    }
+    return next;
+  }
+  function applyNote(state, i, v) {
+    if (state.finished || !validIndex(i) || !validDigit(v)) return state;
+    if (state.puzzle[i] !== '0' || state.grid[i] !== 0) return state;
+    const notes = state.notes.slice();
+    notes[i] ^= (1 << (v - 1));
+    return { ...state, notes, history: pushHistory(state.history, [[i, 0, state.notes[i]]]) };
+  }
+  function applyClear(state, i) {
+    if (state.finished || !validIndex(i) || state.puzzle[i] !== '0') return state;
+    if (state.grid[i] === 0 && state.notes[i] === 0) return state;
+    const grid = state.grid.slice(), notes = state.notes.slice();
+    grid[i] = 0; notes[i] = 0;
+    return { ...state, grid, notes, history: pushHistory(state.history, [[i, state.grid[i], state.notes[i]]]), wrong: dropWrong(state.wrong, [i]) };
+  }
+  // 数字確認:自分で入れた数字のうち、答えと違うマスを調べる。正しい数字は状態にも画面にも出さない
+  function applyCheck(state) {
+    if (state.finished || !hasEntries(state)) return state;
+    const wrong = [];
+    for (let k = 0; k < 81; k++) {
+      if (state.puzzle[k] === '0' && state.grid[k] !== 0 && state.grid[k] !== Number(state.solution[k])) wrong.push(k);
+    }
+    return { ...state, wrong, checks: Math.min((state.checks || 0) + 1, 9999) };
+  }
+  function applyUndo(state) {
+    if (state.finished || state.history.length === 0) return state;
+    const last = state.history[state.history.length - 1];
+    const grid = state.grid.slice(), notes = state.notes.slice();
+    for (let k = last.length - 1; k >= 0; k--) { grid[last[k][0]] = last[k][1]; notes[last[k][0]] = last[k][2]; }
+    return { ...state, grid, notes, history: state.history.slice(0, -1), wrong: dropWrong(state.wrong, last.map((t) => t[0])) };
+  }
+  function apply(state, action) {
+    if (!action || typeof action.type !== 'string') return state;
+    switch (action.type) {
+      case 'set': return applySet(state, action.i, action.v);
+      case 'note': return applyNote(state, action.i, action.v);
+      case 'clear': return applyClear(state, action.i);
+      case 'undo': return applyUndo(state);
+      case 'check': return applyCheck(state);
+      case 'tick': return state.finished ? state : { ...state, elapsed: Math.min(state.elapsed + 1, CONFIG.maxTime) };
+      case 'toggleDup': return { ...state, dup: !state.dup };
+      default: return state;
+    }
+  }
+
+  /* ---- 保存データの検証:形が違うもの・上限を超えるものは受け付けない ---- */
+  function isValidSolution(sol) {
+    for (let u = 0; u < 9; u++) {
+      let r = 0, c = 0, b = 0;
+      for (let k = 0; k < 9; k++) {
+        r |= 1 << (sol[u * 9 + k] - 1);
+        c |= 1 << (sol[k * 9 + u] - 1);
+        b |= 1 << (sol[(Math.floor(u / 3) * 3 + Math.floor(k / 3)) * 9 + (u % 3) * 3 + (k % 3)] - 1);
+      }
+      if (r !== ALL || c !== ALL || b !== ALL) return false;
+    }
+    return true;
+  }
+  function validate(d) {
+    if (!d || typeof d !== 'object') return false;
+    if (d.schemaVersion !== CONFIG.schemaVersion) return false;
+    if (!Number.isInteger(d.seed) || d.seed < 0 || d.seed > CONFIG.seedMax) return false;
+    if (!CONFIG.difficulties.includes(d.difficulty)) return false;
+    if (typeof d.puzzle !== 'string' || !/^[0-9]{81}$/.test(d.puzzle)) return false;
+    if (typeof d.solution !== 'string' || !/^[1-9]{81}$/.test(d.solution)) return false;
+    const sol = Array.from(d.solution, Number);
+    if (!isValidSolution(sol)) return false;
+    for (let k = 0; k < 81; k++) if (d.puzzle[k] !== '0' && d.puzzle[k] !== d.solution[k]) return false;
+    if (!Array.isArray(d.grid) || d.grid.length !== 81) return false;
+    if (!Array.isArray(d.notes) || d.notes.length !== 81) return false;
+    for (let k = 0; k < 81; k++) {
+      const v = d.grid[k], n = d.notes[k];
+      if (!Number.isInteger(v) || v < 0 || v > 9) return false;
+      if (d.puzzle[k] !== '0' && v !== sol[k]) return false;
+      if (!Number.isInteger(n) || n < 0 || n > ALL) return false;
+    }
+    if (!Array.isArray(d.history) || d.history.length > CONFIG.historyMax) return false;
+    for (const entry of d.history) {
+      if (!Array.isArray(entry) || entry.length < 1 || entry.length > 21) return false;
+      for (const t of entry) {
+        if (!Array.isArray(t) || t.length !== 3) return false;
+        if (!validIndex(t[0]) || d.puzzle[t[0]] !== '0') return false;
+        if (!Number.isInteger(t[1]) || t[1] < 0 || t[1] > 9) return false;
+        if (!Number.isInteger(t[2]) || t[2] < 0 || t[2] > ALL) return false;
+      }
+    }
+    if (!Number.isInteger(d.moves) || d.moves < 0 || d.moves > 1000000) return false;
+    if (!Number.isInteger(d.elapsed) || d.elapsed < 0 || d.elapsed > CONFIG.maxTime) return false;
+    if (typeof d.finished !== 'boolean' || typeof d.newBest !== 'boolean' || typeof d.dup !== 'boolean') return false;
+    if (d.finished && !isSolved(d, d.grid)) return false;
+    if (!validBest(d.best)) return false;
+    // 数字確認の項目は、追加前の保存データにはないので「なし」も受け付ける(normalize で補う)
+    if (d.wrong !== undefined) {
+      if (!Array.isArray(d.wrong) || d.wrong.length > 81) return false;
+      for (const k of d.wrong) if (!validIndex(k) || d.puzzle[k] !== '0') return false;
+      if (new Set(d.wrong).size !== d.wrong.length) return false;
+    }
+    if (d.checks !== undefined && (!Number.isInteger(d.checks) || d.checks < 0 || d.checks > 9999)) return false;
+    return true;
+  }
+  return Object.freeze({ newGame, apply, isOver, validate, normalize, hasEntries, conflicts, countSolutions });
+})();
+
+/* ============================================================
+ * storage:localStorage の読み書き。読み込んだら必ず rules.validate を通す
+ * ============================================================ */
+const storage = (() => {
+  function load() {
+    let raw;
+    try { raw = localStorage.getItem(CONFIG.storageKey); } catch (e) { return { state: null, status: 'unavailable' }; }
+    if (raw === null) return { state: null, status: 'none' };
+    try {
+      const data = JSON.parse(raw);
+      if (rules.validate(data)) return { state: rules.normalize(data), status: 'ok' };
+    } catch (e) { /* 構文エラーは下で破棄 */ }
+    try { localStorage.removeItem(CONFIG.storageKey); } catch (e) { /* 何もしない */ }
+    return { state: null, status: 'corrupted' };
+  }
+  function save(state) {
+    try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(state)); } catch (e) { /* 保存できなくても遊べる */ }
+  }
+  return Object.freeze({ load, save });
+})();
+
+/* ============================================================
+ * ui:描画とイベント処理。状態は直接書き換えず、必ず rules を通す
+ * 文字は textContent で入れる(HTML文字列を差し込む書き方は使わない)
+ * ============================================================ */
+const ui = (() => {
+  const $ = (id) => document.getElementById(id);
+  let state = null;
+  let sel = 0;                 // 選んでいるマス(画面の都合なので、保存する状態には入れない)
+  let memo = false;            // メモ入力モード
+  const cells = [];            // マスの要素
+  const parts = [];            // マスの中の要素(数字・メモ・印)
+  const baseClass = [];
+  const levelBtns = {};
+  const padBtns = [];
+
+  function freshSeed() { return ((Date.now() ^ Math.floor(performance.now() * 1000)) >>> 0); }
+  function setMessage(text) { $('message').textContent = text; }
+  function fillList(ul, lines) {
+    while (ul.firstChild) ul.removeChild(ul.firstChild);
+    for (const line of lines) { const li = document.createElement('li'); li.textContent = line; ul.appendChild(li); }
+  }
+  function fmtTime(s) {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    const mm = String(m).padStart(2, '0'), ss = String(sec).padStart(2, '0');
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+  function firstEmpty(st) { const k = st.grid.indexOf(0); return k < 0 ? 0 : k; }
+
+  function fillTexts() {
+    document.title = TEXT.title + ' | 定番ゲーム | わくてかスタディ研究所';
+    $('title').textContent = TEXT.title;
+    $('btn-rules').textContent = TEXT.rulesButton;
+    $('btn-new').textContent = TEXT.newGame;
+    $('btn-new-2').textContent = TEXT.newGame;
+    $('rules-title').textContent = TEXT.rulesTitle;
+    fillList($('rules-list'), TEXT.rules);
+    $('keys-title').textContent = TEXT.keysTitle;
+    fillList($('keys-list'), TEXT.keys);
+    $('seed-title').textContent = TEXT.seedTitle;
+    $('seed-desc').textContent = TEXT.seedDesc;
+    $('seed-label').textContent = TEXT.seedLabel;
+    $('btn-seed').textContent = TEXT.seedButton;
+    $('np-level').setAttribute('aria-label', TEXT.levelGroup);
+    $('np-board').setAttribute('aria-label', TEXT.boardLabel);
+    $('np-pad').setAttribute('aria-label', TEXT.padGroup);
+    $('btn-memo').textContent = TEXT.memo;
+    $('btn-undo').textContent = TEXT.undo;
+    $('btn-dup').textContent = TEXT.dup;
+    $('btn-check').textContent = TEXT.check;
+  }
+
+  /* ---- 盤・ボタンの組み立て(最初に1回だけ) ---- */
+  function buildBoard() {
+    const board = $('np-board');
+    for (let r = 0; r < 9; r++) {
+      const row = document.createElement('div');
+      row.className = 'np-row' + (r % 3 === 2 && r < 8 ? ' np-b3' : '');
+      row.setAttribute('role', 'row');
+      for (let c = 0; c < 9; c++) {
+        const i = r * 9 + c;
+        const cell = document.createElement('div');
+        baseClass[i] = 'np-cell' + (c % 3 === 2 && c < 8 ? ' np-r3' : '');
+        cell.className = baseClass[i];
+        cell.setAttribute('role', 'gridcell');
+        cell.tabIndex = -1;
+        cell.dataset.i = String(i);
+        const val = document.createElement('span'); val.className = 'np-val';
+        const notes = document.createElement('span'); notes.className = 'np-notes'; notes.setAttribute('aria-hidden', 'true');
+        const noteSpans = [];
+        for (let k = 0; k < 9; k++) { const s = document.createElement('span'); notes.appendChild(s); noteSpans.push(s); }
+        const mark = document.createElement('span'); mark.className = 'np-mark'; mark.setAttribute('aria-hidden', 'true');
+        const markWrong = document.createElement('span'); markWrong.className = 'np-mark np-mark-wrong'; markWrong.setAttribute('aria-hidden', 'true');
+        cell.appendChild(notes); cell.appendChild(val); cell.appendChild(mark); cell.appendChild(markWrong);
+        row.appendChild(cell);
+        cells[i] = cell; parts[i] = { val, noteSpans, mark, markWrong };
+      }
+      board.appendChild(row);
+    }
+    board.addEventListener('click', (e) => {
+      const cell = e.target.closest ? e.target.closest('.np-cell') : null;
+      if (!cell) return;
+      sel = Number(cell.dataset.i);
+      render();
+      cell.focus();
+    });
+  }
+  function buildControls() {
+    for (const d of CONFIG.difficulties) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'gbtn'; b.textContent = TEXT.levels[d];
+      b.addEventListener('click', () => { if (state.difficulty !== d) startNew(freshSeed(), d); });
+      $('np-level').appendChild(b); levelBtns[d] = b;
+    }
+    for (let v = 1; v <= 9; v++) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'gbtn'; b.textContent = content.symbols[v - 1];
+      b.addEventListener('click', () => input(v));
+      $('np-pad').appendChild(b); padBtns[v] = b;
+    }
+    const erase = document.createElement('button');
+    erase.type = 'button'; erase.className = 'gbtn np-erase'; erase.textContent = TEXT.erase;
+    erase.setAttribute('aria-label', TEXT.eraseLabel);
+    erase.addEventListener('click', eraseCell);
+    $('np-pad').appendChild(erase); padBtns[0] = erase;
+    $('btn-memo').addEventListener('click', toggleMemo);
+    $('btn-undo').addEventListener('click', undo);
+    $('btn-dup').addEventListener('click', () => commit(rules.apply(state, { type: 'toggleDup' })));
+    $('btn-check').addEventListener('click', checkDigits);
+  }
+
+  /* ---- 描画 ---- */
+  function renderStatus() {
+    const best = state.best[state.difficulty];
+    $('np-status').textContent = TEXT.status(state.moves, fmtTime(state.elapsed), best === null ? TEXT.bestNone : fmtTime(best));
+  }
+  function renderBoard() {
+    const bad = rules.conflicts(state.grid);
+    const wrongSet = new Set(state.wrong);
+    const selVal = state.grid[sel];
+    const sr = Math.floor(sel / 9), sc = sel % 9, sb = Math.floor(sr / 3) * 3 + Math.floor(sc / 3);
+    for (let i = 0; i < 81; i++) {
+      const r = Math.floor(i / 9), c = i % 9;
+      const v = state.grid[i], given = state.puzzle[i] !== '0', isBad = state.dup && bad[i], isWrong = wrongSet.has(i);
+      let cls = baseClass[i];
+      if (given) cls += ' is-given';
+      if (i === sel) cls += ' is-sel';
+      else if (selVal !== 0 && v === selVal) cls += ' is-same';
+      else if (r === sr || c === sc || (Math.floor(r / 3) * 3 + Math.floor(c / 3)) === sb) cls += ' is-rel';
+      if (isBad) cls += ' is-bad';
+      if (isWrong) cls += ' is-wrong';
+      const cell = cells[i], p = parts[i];
+      cell.className = cls;
+      cell.tabIndex = i === sel ? 0 : -1;
+      cell.setAttribute('aria-selected', String(i === sel));
+      cell.setAttribute('aria-readonly', String(given));
+      p.val.textContent = v ? content.symbols[v - 1] : '';
+      const noteNames = [];
+      for (let k = 0; k < 9; k++) {
+        const on = v === 0 && ((state.notes[i] >> k) & 1) === 1;
+        p.noteSpans[k].textContent = on ? content.symbols[k] : '';
+        if (on) noteNames.push(content.symbols[k]);
+      }
+      p.mark.textContent = isBad ? '!' : '';
+      p.markWrong.textContent = isWrong ? '×' : '';
+      cell.setAttribute('aria-label', TEXT.cellLabel(r + 1, c + 1, v ? content.symbols[v - 1] : null, given, noteNames, isBad, isWrong, i === sel));
+    }
+  }
+  function renderControls() {
+    for (const d of CONFIG.difficulties) levelBtns[d].setAttribute('aria-pressed', String(state.difficulty === d));
+    for (let v = 1; v <= 9; v++) {
+      padBtns[v].disabled = state.finished;
+      padBtns[v].setAttribute('aria-label', memo ? TEXT.padNote(v) : TEXT.padInput(v));
+    }
+    padBtns[0].disabled = state.finished;
+    $('btn-memo').setAttribute('aria-pressed', String(memo));
+    $('btn-memo').disabled = state.finished;
+    $('btn-undo').disabled = state.finished || state.history.length === 0;
+    $('btn-dup').setAttribute('aria-pressed', String(state.dup));
+    $('btn-check').disabled = state.finished;
+  }
+  function render() {
+    $('seed-current').textContent = TEXT.seedCurrent(state.seed);
+    $('game-over').hidden = !rules.isOver(state);
+    renderStatus();
+    renderBoard();
+    renderControls();
+  }
+  function commit(next) {
+    state = next;
+    storage.save(state);
+    render();
+  }
+
+  /* ---- 操作 ---- */
+  function act(action) {
+    const next = rules.apply(state, action);
+    if (next === state) return false;
+    commit(next);
+    return true;
+  }
+  function afterSet() {
+    if (state.finished) { setMessage(TEXT.cleared(state.moves, fmtTime(state.elapsed), state.checks, state.newBest)); return; }
+    if (state.grid.indexOf(0) < 0) { setMessage(TEXT.fullButWrong); return; }
+    if (state.dup && rules.conflicts(state.grid)[sel]) { setMessage(TEXT.dupFound); return; }
+    setMessage('');
+  }
+  function input(v) {
+    if (state.finished) return;
+    if (state.puzzle[sel] !== '0') { setMessage(TEXT.givenFixed); return; }
+    if (memo) {
+      if (state.grid[sel] !== 0) { setMessage(TEXT.noteOnFilled); return; }
+      if (act({ type: 'note', i: sel, v })) setMessage('');
+      return;
+    }
+    if (act({ type: 'set', i: sel, v })) afterSet();
+  }
+  function eraseCell() {
+    if (state.finished) return;
+    if (state.puzzle[sel] !== '0') { setMessage(TEXT.givenFixed); return; }
+    if (act({ type: 'clear', i: sel })) setMessage('');
+  }
+  function undo() { if (act({ type: 'undo' })) setMessage(''); }
+  // 数字確認:間違いのあるマスに「×」を付ける。正しい数字は教えない
+  function checkDigits() {
+    if (state.finished) return;
+    if (!rules.hasEntries(state)) { setMessage(TEXT.checkNone); return; }
+    commit(rules.apply(state, { type: 'check' }));
+    setMessage(state.wrong.length > 0 ? TEXT.checkWrong(state.wrong.length) : TEXT.checkOk);
+  }
+  function toggleMemo() { if (state.finished) return; memo = !memo; renderControls(); }
+  function moveSel(dr, dc) {
+    const r = Math.max(0, Math.min(8, Math.floor(sel / 9) + dr));
+    const c = Math.max(0, Math.min(8, (sel % 9) + dc));
+    sel = r * 9 + c;
+    render();
+    cells[sel].focus();
+  }
+
+  function startNew(seed, difficulty) {
+    toggleRules(false, false);
+    memo = false;
+    const next = rules.newGame(seed, difficulty || (state ? state.difficulty : 'normal'), state);
+    sel = firstEmpty(next);
+    commit(next);
+    setMessage(TEXT.newGameStarted(state.seed));
+  }
+
+  // ルール欄の開閉(全ゲーム共通の操作:N=新しいゲーム、R=ルールの開閉、Esc=ルールを閉じる)
+  function toggleRules(force, moveFocus = true) {
+    const panel = $('rules');
+    const open = force === undefined ? panel.hidden : force;
+    panel.hidden = !open;
+    $('btn-rules').setAttribute('aria-expanded', String(open));
+    if (open) $('seed-input').value = '';
+    else if (moveFocus && force === false) $('btn-rules').focus();
+  }
+
+  function onSeedSubmit() {
+    const raw = $('seed-input').value.trim();
+    if (!/^\d{1,10}$/.test(raw) || Number(raw) > CONFIG.seedMax) { setMessage(TEXT.seedInvalid); $('seed-input').focus(); return; }
+    startNew(Number(raw));
+  }
+
+  function onKey(e) {
+    if (e.key === 'Escape' && !$('rules').hidden) { e.preventDefault(); toggleRules(false); return; }
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;     // ブラウザのショートカット(再読み込みなど)を邪魔しない
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); startNew(freshSeed()); return; }
+    if (e.key === 'r' || e.key === 'R') { e.preventDefault(); toggleRules(); return; }
+    if (!$('rules').hidden) return;                      // ルール欄を開いている間は、盤の操作キーを使わない
+    // ゲームの操作キー(N/R/Esc と重ならないもの)
+    switch (e.key) {
+      case 'ArrowUp': e.preventDefault(); moveSel(-1, 0); return;
+      case 'ArrowDown': e.preventDefault(); moveSel(1, 0); return;
+      case 'ArrowLeft': e.preventDefault(); moveSel(0, -1); return;
+      case 'ArrowRight': e.preventDefault(); moveSel(0, 1); return;
+      case '0': case 'Delete': case 'Backspace': e.preventDefault(); eraseCell(); return;
+      case 'm': case 'M': e.preventDefault(); toggleMemo(); return;
+      case 'u': case 'U': e.preventDefault(); undo(); return;
+      case 'c': case 'C': e.preventDefault(); checkDigits(); return;
+      default:
+        if (/^[1-9]$/.test(e.key)) { e.preventDefault(); input(Number(e.key)); }
+    }
+  }
+
+  // 経過時間:1秒ごとに進める(タブが隠れている間・クリア後は止める)
+  function tick() {
+    if (!state || state.finished || document.hidden) return;
+    state = rules.apply(state, { type: 'tick' });
+    storage.save(state);
+    renderStatus();
+  }
+
+  function init() {
+    fillTexts();
+    buildBoard();
+    buildControls();
+    $('btn-new').addEventListener('click', () => startNew(freshSeed()));
+    $('btn-new-2').addEventListener('click', () => startNew(freshSeed()));
+    $('btn-rules').addEventListener('click', () => toggleRules());
+    $('btn-seed').addEventListener('click', onSeedSubmit);
+    $('seed-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onSeedSubmit(); } });
+    document.addEventListener('keydown', onKey);
+
+    const loaded = storage.load();
+    if (loaded.state) { sel = firstEmpty(loaded.state); commit(loaded.state); setMessage(TEXT.restored); }
+    else {
+      startNew(freshSeed());
+      if (loaded.status === 'corrupted') setMessage(TEXT.corrupted);
+    }
+    setInterval(tick, 1000);
+  }
+
+  return Object.freeze({ init });
+})();
+
+ui.init();
+</script>
+</body>
+</html>
