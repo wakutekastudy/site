@@ -4,7 +4,7 @@
   ナンバープレース / number-place
   ============================================================
   ゲーム名      : ナンバープレース / number-place
-  版            : 0.3
+  版            : 0.4
   最終更新日    : 2026-10-18
   ライセンス    : MIT-0(リポジトリの LICENSE を参照)
   題材の確認    : ①ルール:9×9のマスにタテ・ヨコ・3×3ブロックで1〜9を1つずつ入れる論理パズル。遊び方そのものなので問題ないと考えた。
@@ -149,7 +149,9 @@
   .np-notes span { display: flex; align-items: center; justify-content: center; }
   @media (max-width: 360px) { .np-cell { font-size: 1.15rem; } }
 
-  .np-pad { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.4rem; margin-top: 0.6rem; }
+  /* メッセージは盤のすぐ下。2行分の高さを確保し、出し入れで下のボタンが動かないようにする */
+  .np-message { min-height: 3.2em; margin: 0.4rem 0 0; font-size: 0.95rem; }
+  .np-pad { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.4rem; margin-top: 0.2rem; }
   .np-pad button.gbtn { padding: 0.25rem; font-size: 1.3rem; font-weight: 700; }
   .np-pad button.gbtn.np-erase { font-size: 1rem; }
   .np-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; margin-top: 0.4rem; }
@@ -181,14 +183,15 @@
       <button type="button" id="btn-seed" class="gbtn"></button>
     </div>
   </section>
-  <p id="message" class="message" role="status" aria-live="polite"></p>
 <!-- ===== 共通ここまで(HTML) ===== -->
+  <!-- メッセージ欄は、盤と操作ボタンが1画面に収まらないため、共通の位置(ルール欄の下)ではなく盤のすぐ下に置く -->
 
   <!-- ===== ゲーム本体(★ゲームごと) ===== -->
   <section id="game" aria-label="ゲーム">
     <div class="np-level" id="np-level" role="group"></div>
     <p class="np-status" id="np-status"></p>
     <div class="np-board" id="np-board" role="grid"></div>
+    <p id="message" class="message np-message" role="status" aria-live="polite"></p>
     <div class="np-pad" id="np-pad" role="group"></div>
     <div class="np-tools">
       <button type="button" id="btn-memo" class="gbtn" aria-pressed="false"></button>
